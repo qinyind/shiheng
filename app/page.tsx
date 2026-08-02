@@ -188,30 +188,68 @@ function mealRole(meal: MealPreset): MealRole {
 
 function guideForMeal(meal: MealPreset, goal: Goal, dayType: DayType): MealGuide {
   const role = mealRole(meal);
+  const leanMeatRule = "肉类只选瘦肉：无白色脂肪层的猪牛羊肉、去皮鸡鸭肉、鱼虾贝，或肝肾肚血。";
+  const avoidFattyMeat = "这些不算瘦肉：鸡鸭皮、排骨/大排、糖醋里脊、锅包肉、猪蹄、牛腩、牛排、肥牛肥羊、炸肉、午餐肉、肉肠、肉馅和肉丸。";
+  const avoidSugarFat = `${goal === "cut" ? "减脂期严格排除" : "增肌期也只偶尔吃"}糖油混合物：饼干、蛋糕、点心、甜品、油条、煎饼、手抓饼、葱油饼、花式面包和膨化食品。`;
+  const fatShortage = goal === "cut"
+    ? "若早饭不吃蛋黄牛奶，或午晚饭都吃低油无油菜，为避免脂肪不足，全天补30g坚果、或3个全蛋、或1盒全脂牛奶。"
+    : "若早饭不吃蛋黄牛奶，或午晚饭都吃低油无油菜，为避免脂肪不足，全天坚果需增至60g。";
   if (role === "pre") return {
     summary: "这不是正式一餐：只垫少量易消化碳水，吃到五六分饱即可开练。",
     choices: ["香蕉：小根约20g、大根约30g碳水", "娃哈哈八宝粥：约30–47g碳水/罐", "旺仔小馒头：约37g碳水/袋", "脉动等运动饮料：约30g碳水/瓶"],
-    cautions: ["蛋白质不用专门吃；若刚好吃正餐，可以搭配少量瘦肉", "原则上不吃脂肪，避开非瘦肉、糖油混合物和吸油菜", "吃完不需要专门等待，但不要吃到全饱"],
+    cautions: [
+      "练前餐不是正式一餐，只能吃到五六分饱；吃完不用专门等待，可以直接准备训练。",
+      "极端重要：练前脂肪不能吃，蛋白质也不用专门补；若刚好吃正餐，只搭配少量瘦肉。",
+      avoidFattyMeat,
+      avoidSugarFat,
+      "练前避开煎炒鸡蛋（含番茄炒蛋）、油烧茄子、干煸菜等吸油菜。",
+    ],
   };
   if (role === "post") return {
     summary: "全天最大餐，最好练完后半小时内开始吃；先碳水和蛋白质。",
     choices: ["高GI主食：一般米饭、馒头、花卷、熟面", "蛋白质：一般熟瘦肉、去皮禽肉、鱼虾贝", "来不及吃正餐：便携快碳 + 蛋白粉"],
-    cautions: ["水果只能占一部分碳水，不能替代主要淀粉主食", "意面、燕麦麸皮等低GI或高纤主食不作为练后主要碳水", "蔬菜少吃、后吃；与一般正餐的进食顺序相反"],
+    cautions: [
+      "练后餐与一般正餐顺序相反：先吃碳水和蛋白质，蔬菜少吃、后吃，避免胰岛素被压制。",
+      leanMeatRule,
+      avoidFattyMeat,
+      avoidSugarFat,
+      "水果必须置换主食，不能在主食之外额外吃；水果10g碳水约置换30g熟米饭。",
+      "意面、燕麦麸皮等低GI或高纤主食，不作为练后主要碳水。",
+    ],
   };
   if (role === "snack") return {
     summary: "预留的10%碳水用于抵扣牛奶、蔬菜和调料的漏算，不是让你再吃一份主食。",
     choices: ["低糖牛肉干 / 鸡肉干", "鸡蛋、乳制品", "蔬菜、无糖饮料"],
-    cautions: ["不专门吃面包、米面、奶茶或水果", "不吃饼干、膨化食品、甜品糕点等糖油混合物", "不吃也可以，把少量额度分到其他正餐"],
+    cautions: [
+      "零食/夜宵设计热量不多，可以不吃；把额度分到其他正餐，多吃几口瘦肉或主食即可。",
+      "这10%的少量碳水是牛奶、蔬菜和调料的漏算预留，不用再专门吃面包、米面、奶茶或水果。",
+      avoidSugarFat,
+      "需要加餐时优先低糖瘦肉干、鸡蛋、乳制品、蔬菜或无糖饮料。",
+    ],
   };
   if (role === "breakfast") return {
     summary: "早餐同时建立碳水、蛋白质和基础脂肪来源。",
     choices: ["主食任选：米饭/粥、馒头、切片面包、燕麦、薯类", "蛋白质优先：鸡蛋 + 纯牛奶；或鸡蛋", "鸡蛋可水煮、茶叶蛋、蒸蛋羹"],
-    cautions: ["鸡蛋优先选择水煮蛋，不用煎蛋替代", goal === "gain" ? "增肌方案还安排每天约30g坚果作为脂肪来源" : "减脂方案用蛋黄牛奶和正餐带油瘦肉覆盖脂肪，不建议逐克追脂肪", "如果完全不吃蛋黄和牛奶，需要按脂肪不足规则补充"],
+    cautions: [
+      "鸡蛋可以水煮、做茶叶蛋或鸡蛋羹，但不能用油煎蛋替代。",
+      leanMeatRule,
+      goal === "gain" ? "增肌方案每天还要安排约30g坚果；不吃坚果时，可用米饭和瘦肉合计约100g置换。" : "减脂方案的基础脂肪来自早餐蛋黄牛奶和正餐带油瘦肉菜。",
+      fatShortage,
+      "一般餐先吃、多吃蔬菜，再吃碳水，有助于控制餐后反应。",
+    ],
   };
   return {
     summary: dayType === "rest" ? "休息日正餐：主食配瘦肉，蔬菜先吃、多吃。" : "其他正餐：主食配瘦肉，蔬菜先吃、多吃。",
     choices: ["主食：一般米饭、馒头、熟面、红薯、土豆、玉米", "瘦肉：去皮鸡鸭、无白色脂肪层的猪牛羊、鱼虾贝、肝肾肚血", "蔬菜不用定量，争取每天都吃"],
-    cautions: ["红薯、土豆、玉米、山药、芋头属于碳水主食，不算蔬菜", "避开肥牛肥羊、排骨牛排、肉馅肉丸、炸肉等非瘦肉", goal === "cut" ? "重油菜在盘边刮油或简单过水；减脂期严格排除糖油混合物" : "重油菜尽量刮油；糖油混合物增肌期也只偶尔吃"],
+    cautions: [
+      leanMeatRule,
+      avoidFattyMeat,
+      "水煮牛肉、毛血旺、口水鸡等重油菜，要先确认肉本身是瘦肉，再在盘边刮油或简单过水。",
+      avoidSugarFat,
+      "红薯、土豆、玉米、山药和芋头属于碳水主食，不算蔬菜。",
+      "一般正餐先吃、多吃蔬菜，再吃碳水；只有力训后的练后餐相反。",
+      fatShortage,
+    ],
   };
 }
 
@@ -646,8 +684,11 @@ function MealCard({ meal, target, entries, foods, goal, dayType, onAdd, onRemove
       <div className="meal-excel-guide">
         <div className="meal-guide-title"><span>本餐建议</span><p>{excelGuide.summary}</p></div>
         <div className="meal-guide-chips">{excelGuide.choices.slice(0, 3).map((choice) => <span key={choice}>{choice}</span>)}</div>
-        <p className="meal-guide-warning"><b>注意</b>{excelGuide.cautions[0]}</p>
-        <details><summary>展开全部建议与注意事项</summary><div><ul>{excelGuide.choices.map((choice) => <li key={choice}>{choice}</li>)}</ul><ul>{excelGuide.cautions.map((caution) => <li key={caution}>{caution}</li>)}</ul></div></details>
+        <div className="meal-guide-alert" role="note" aria-label={`${meal.name}重点提醒`}>
+          <strong><span aria-hidden="true">!</span> 重点提醒</strong>
+          <ul>{excelGuide.cautions.map((caution) => <li key={caution}>{caution}</li>)}</ul>
+        </div>
+        {excelGuide.choices.length > 3 && <details><summary>查看更多可选食物</summary><ul>{excelGuide.choices.slice(3).map((choice) => <li key={choice}>{choice}</li>)}</ul></details>}
       </div>
     </article>
   );
