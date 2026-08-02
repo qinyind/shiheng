@@ -36,11 +36,13 @@ type MealPreset = {
   proteinShare: number;
 };
 type Food = Macro & { id: string; name: string; category: string; unit?: string };
+type AiIngredient = Macro & { name: string; grams: number };
 type AiEstimate = Macro & {
   name: string;
   grams: number;
   confidence: "low" | "medium" | "high";
   note: string;
+  ingredients: AiIngredient[];
 };
 type FoodEntry = {
   id: string;
@@ -269,6 +271,22 @@ function sumMacros(entries: FoodEntry[]): Macro {
   );
 }
 
+function foodNameKey(name: string) {
+  return name.toLowerCase()
+    .replace(/[（(][^）)]*[）)]/g, "")
+    .replace(/实际摄入|可食部|一般|蒸煮|清蒸|水煮|熟制|熟|生/g, "")
+    .replace(/[\s/·、_-]/g, "");
+}
+
+function matchingFood(ingredientName: string, foods: Food[]) {
+  const key = foodNameKey(ingredientName);
+  if (!key) return undefined;
+  return foods.find((food) => {
+    const foodKey = foodNameKey(food.name);
+    return foodKey === key || (Math.min(foodKey.length, key.length) >= 3 && (foodKey.includes(key) || key.includes(foodKey)));
+  });
+}
+
 function round(value: number, digits = 0) {
   const p = 10 ** digits;
   return Math.round(value * p) / p;
@@ -381,7 +399,7 @@ function PlanGuidance({ profile, dayType, bmi, planLabel }: { profile: Profile; 
   );
 }
 
-function AiFoodAnalyzer({ onSave }: { onSave: (food: Food) => void }) {
+function AiFoodAnalyzer({ foods, onSaveMany }: { foods: Food[]; onSaveMany: (foods: Food[]) => void }) {
   const [description, setDescription] = useState("");
   const [imageData, setImageData] = useState("");
   const [imageName, setImageName] = useState("");
@@ -389,6 +407,7 @@ function AiFoodAnalyzer({ onSave }: { onSave: (food: Food) => void }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const [saveFlags, setSaveFlags] = useState<boolean[]>([]);
 
   function chooseImage(file?: File) {
     setError("");
@@ -428,6 +447,7 @@ function AiFoodAnalyzer({ onSave }: { onSave: (food: Food) => void }) {
       const data = await response.json() as { estimate?: AiEstimate; error?: string };
       if (!response.ok || !data.estimate) throw new Error(data.error || "暂时无法完成识别，请稍后重试。");
       setEstimate(data.estimate);
+      setSaveFlags(data.estimate.ingredients.map((ingredient) => !matchingFood(ingredient.name, foods)));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "暂时无法完成识别，请稍后重试。");
     } finally {
@@ -435,34 +455,46 @@ function AiFoodAnalyzer({ onSave }: { onSave: (food: Food) => void }) {
     }
   }
 
-  function updateEstimate<K extends keyof AiEstimate>(key: K, value: AiEstimate[K]) {
-    setEstimate((current) => current ? { ...current, [key]: value } : current);
+  function updateIngredient(index: number, key: keyof AiIngredient, value: string | number) {
+    setEstimate((current) => {
+      if (!current) return current;
+      const ingredients = current.ingredients.map((ingredient, itemIndex) => itemIndex === index ? { ...ingredient, [key]: value } as AiIngredient : ingredient);
+      const sum = (macro: keyof Macro | "grams") => ingredients.reduce((total, ingredient) => total + Number(ingredient[macro] || 0), 0);
+      return { ...current, ingredients, grams: sum("grams"), carbs: sum("carbs"), protein: sum("protein"), fat: sum("fat"), kcal: sum("kcal") };
+    });
     setSaved(false);
   }
 
-  function saveFood() {
-    if (!estimate || estimate.grams <= 0 || !estimate.name.trim()) return;
-    const scale = 100 / estimate.grams;
-    onSave({
-      id: `saved-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      name: estimate.name.trim(),
-      category: "我的食物",
-      carbs: round(Math.max(0, estimate.carbs) * scale, 2),
-      protein: round(Math.max(0, estimate.protein) * scale, 2),
-      fat: round(Math.max(0, estimate.fat) * scale, 2),
-      kcal: round(Math.max(0, estimate.kcal) * scale, 1),
+  function saveFoods() {
+    if (!estimate) return;
+    const additions = estimate.ingredients.flatMap((ingredient, index) => {
+      if (!saveFlags[index] || matchingFood(ingredient.name, foods) || ingredient.grams <= 0 || !ingredient.name.trim()) return [];
+      const scale = 100 / ingredient.grams;
+      return [{
+        id: `saved-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
+        name: ingredient.name.trim(),
+        category: "我的食材",
+        carbs: round(Math.max(0, ingredient.carbs) * scale, 2),
+        protein: round(Math.max(0, ingredient.protein) * scale, 2),
+        fat: round(Math.max(0, ingredient.fat) * scale, 2),
+        kcal: round(Math.max(0, ingredient.kcal) * scale, 1),
+      }];
     });
+    if (!additions.length) return;
+    onSaveMany(additions);
     setSaved(true);
   }
 
   const confidenceLabel = estimate?.confidence === "high" ? "较高" : estimate?.confidence === "medium" ? "中等" : "较低";
+  const ingredientMatches = estimate?.ingredients.map((ingredient) => matchingFood(ingredient.name, foods));
+  const saveCount = estimate?.ingredients.filter((_ingredient, index) => saveFlags[index] && !ingredientMatches?.[index]).length || 0;
 
   return (
     <section className="ai-card" id="ai-food">
       <div className="ai-copy">
         <p className="eyebrow">04 · AI 智能识餐</p>
         <h2>说出来，或拍下来</h2>
-        <p>描述食物、重量和烹饪方式，或拍摄餐盘 / 营养标签。AI 会估算整份营养；保存前可以手动校正。</p>
+        <p>描述食物、重量和烹饪方式，或拍摄餐盘 / 营养标签。AI 会拆成基础食材，逐项估算后相加；保存前可以手动校正。</p>
         <div className="ai-tips"><span>写清生重 / 熟重</span><span>带上油与酱料</span><span>照片尽量俯拍</span></div>
       </div>
 
@@ -478,15 +510,22 @@ function AiFoodAnalyzer({ onSave }: { onSave: (food: Food) => void }) {
 
       {estimate && (
         <div className="ai-result">
-          <div className="ai-result-head"><div><span>AI 估算结果</span><strong>置信度{confidenceLabel}</strong></div><p>{estimate.note}</p></div>
-          <div className="estimate-grid">
-            <label className="estimate-name"><span>保存名称</span><input value={estimate.name} onChange={(event) => updateEstimate("name", event.target.value)} /></label>
-            <label><span>整份重量</span><div><input type="number" min="1" value={estimate.grams} onChange={(event) => updateEstimate("grams", Number(event.target.value))} /><b>g</b></div></label>
-            {(["carbs", "protein", "fat", "kcal"] as const).map((key) => (
-              <label key={key}><span>{key === "carbs" ? "整份碳水" : key === "protein" ? "整份蛋白质" : key === "fat" ? "整份脂肪" : "整份热量"}</span><div><input type="number" min="0" step="0.1" value={round(estimate[key], 1)} onChange={(event) => updateEstimate(key, Number(event.target.value))} /><b>{key === "kcal" ? "kcal" : "g"}</b></div></label>
-            ))}
+          <div className="ai-result-head"><div><span>{estimate.name} · {estimate.ingredients.length} 种基础食材</span><strong>置信度{confidenceLabel}</strong></div><p>{estimate.note}</p></div>
+          <div className="ingredient-list">
+            {estimate.ingredients.map((ingredient, index) => {
+              const matched = ingredientMatches?.[index];
+              return <div className="ingredient-card" key={`${index}-${ingredient.name}`}>
+                <div className="ingredient-status"><label><input type="checkbox" checked={Boolean(saveFlags[index] && !matched)} disabled={Boolean(matched)} onChange={(event) => setSaveFlags((flags) => flags.map((flag, flagIndex) => flagIndex === index ? event.target.checked : flag))} /><span>{matched ? `已匹配：${matched.name}` : "未收录，保存到食材库"}</span></label></div>
+                <div className="ingredient-fields">
+                  <label className="ingredient-name"><span>基础食材</span><input value={ingredient.name} onChange={(event) => updateIngredient(index, "name", event.target.value)} /></label>
+                  <label><span>重量</span><div><input type="number" min="0.1" step="0.1" value={round(ingredient.grams, 1)} onChange={(event) => updateIngredient(index, "grams", Number(event.target.value))} /><b>g</b></div></label>
+                  {(["carbs", "protein", "fat", "kcal"] as const).map((key) => <label key={key}><span>{key === "carbs" ? "碳水" : key === "protein" ? "蛋白质" : key === "fat" ? "脂肪" : "热量"}</span><div><input type="number" min="0" step="0.1" value={round(ingredient[key], 1)} onChange={(event) => updateIngredient(index, key, Number(event.target.value))} /><b>{key === "kcal" ? "kcal" : "g"}</b></div></label>)}
+                </div>
+              </div>;
+            })}
           </div>
-          <div className="save-result-row"><p>保存后会自动换算为每 100g 营养，并出现在所有餐次的“我的食物”中。</p><button onClick={saveFood} disabled={saved}>{saved ? "已保存到我的食物" : "保存为自定义食物"}</button></div>
+          <div className="ingredient-total"><span>按 {estimate.ingredients.length} 种食材之和计算</span><b>{round(estimate.grams, 1)}g</b><b>碳水 {round(estimate.carbs, 1)}g</b><b>蛋白质 {round(estimate.protein, 1)}g</b><b>脂肪 {round(estimate.fat, 1)}g</b><b>{round(estimate.kcal)} kcal</b></div>
+          <div className="save-result-row"><p>已收录食材会直接匹配；只把勾选的未收录食材按每 100g 营养加入食材库。</p><button onClick={saveFoods} disabled={saved || saveCount === 0}>{saved ? "新食材已保存" : saveCount ? `保存 ${saveCount} 种新食材` : "无需新增食材"}</button></div>
         </div>
       )}
     </section>
@@ -764,9 +803,12 @@ export default function Home() {
     });
   }
 
-  function saveCustomFood(food: Food) {
+  function saveCustomFoods(foods: Food[]) {
     markChanged();
-    setCustomFoods((current) => [...current.filter((item) => !(item.name === food.name && item.category === "我的食物")), food]);
+    setCustomFoods((current) => {
+      const incoming = new Set(foods.map((food) => foodNameKey(food.name)));
+      return [...current.filter((item) => !incoming.has(foodNameKey(item.name))), ...foods];
+    });
   }
 
   function chooseDayType(next: DayType) {
@@ -873,7 +915,7 @@ export default function Home() {
 
         <PlanGuidance profile={profile} dayType={effectiveDayType} bmi={bmi} planLabel={currentPlanLabel} />
 
-        <AiFoodAnalyzer onSave={saveCustomFood} />
+        <AiFoodAnalyzer foods={availableFoods} onSaveMany={saveCustomFoods} />
 
         <div className="section-heading">
           <div><p className="eyebrow">05 · 逐餐记录</p><h2>每一餐都有清楚的边界</h2></div>

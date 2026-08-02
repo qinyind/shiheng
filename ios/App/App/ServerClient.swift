@@ -2,6 +2,19 @@ import Foundation
 import Security
 import UIKit
 
+struct NutritionIngredient: Codable, Equatable, Identifiable {
+    let name: String
+    let grams: Double
+    let carbs: Double
+    let protein: Double
+    let fat: Double
+    let kcal: Double
+
+    var id: String { name }
+    var totalMacro: Macro { Macro(carbs: carbs, protein: protein, fat: fat, kcal: kcal) }
+    var per100: Macro { totalMacro.scaled(by: 100 / max(grams, 0.1)) }
+}
+
 struct NutritionEstimate: Codable, Equatable {
     let name: String
     let grams: Double
@@ -11,6 +24,7 @@ struct NutritionEstimate: Codable, Equatable {
     let kcal: Double
     let confidence: String
     let note: String
+    let ingredients: [NutritionIngredient]
 
     var totalMacro: Macro { Macro(carbs: carbs, protein: protein, fat: fat, kcal: kcal) }
     var per100: Macro { totalMacro.scaled(by: 100 / max(grams, 1)) }

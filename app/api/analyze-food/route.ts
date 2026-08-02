@@ -10,18 +10,49 @@ type OpenAIResponse = {
 const schema = {
   type: "object",
   additionalProperties: false,
-  required: ["name", "grams", "carbs", "protein", "fat", "kcal", "confidence", "note"],
+  required: ["name", "ingredients", "confidence", "note"],
   properties: {
-    name: { type: "string", description: "A concise Chinese name for the whole serving or mixed dish." },
-    grams: { type: "number", minimum: 1, description: "Estimated edible weight of the whole serving in grams." },
-    carbs: { type: "number", minimum: 0, description: "Total carbohydrate grams in the whole serving." },
-    protein: { type: "number", minimum: 0, description: "Total protein grams in the whole serving." },
-    fat: { type: "number", minimum: 0, description: "Total fat grams in the whole serving." },
-    kcal: { type: "number", minimum: 0, description: "Total energy in kcal for the whole serving." },
+    name: { type: "string", description: "A concise Chinese name for the whole meal." },
+    ingredients: {
+      type: "array",
+      minItems: 1,
+      maxItems: 20,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["name", "grams", "carbs", "protein", "fat", "kcal"],
+        properties: {
+          name: { type: "string", description: "Chinese base ingredient name including cooked/raw state." },
+          grams: { type: "number", minimum: 0.1, description: "Actual eaten weight of this ingredient." },
+          carbs: { type: "number", minimum: 0 },
+          protein: { type: "number", minimum: 0 },
+          fat: { type: "number", minimum: 0 },
+          kcal: { type: "number", minimum: 0 },
+        },
+      },
+    },
     confidence: { type: "string", enum: ["low", "medium", "high"] },
-    note: { type: "string", description: "A short Chinese explanation of assumptions, including raw/cooked state and cooking oil when relevant." },
+    note: { type: "string", description: "A short Chinese explanation of assumptions." },
   },
 };
+
+type Ingredient = { name: string; grams: number; carbs: number; protein: number; fat: number; kcal: number };
+
+function normalizeEstimate(value: { name?: unknown; ingredients?: unknown; confidence?: unknown; note?: unknown }) {
+  if (typeof value.name !== "string" || typeof value.note !== "string" || !["low", "medium", "high"].includes(String(value.confidence))) return null;
+  if (!Array.isArray(value.ingredients) || value.ingredients.length < 1 || value.ingredients.length > 20) return null;
+  const keys = ["grams", "carbs", "protein", "fat", "kcal"] as const;
+  const ingredients: Ingredient[] = [];
+  for (const item of value.ingredients) {
+    if (!item || typeof item !== "object") return null;
+    const ingredient = item as Record<string, unknown>;
+    if (typeof ingredient.name !== "string" || !ingredient.name.trim()) return null;
+    if (!keys.every((key) => Number.isFinite(ingredient[key]) && Number(ingredient[key]) >= (key === "grams" ? 0.1 : 0))) return null;
+    ingredients.push({ name: ingredient.name.trim().slice(0, 80), grams: Number(ingredient.grams), carbs: Number(ingredient.carbs), protein: Number(ingredient.protein), fat: Number(ingredient.fat), kcal: Number(ingredient.kcal) });
+  }
+  const sum = (key: keyof Omit<Ingredient, "name">) => ingredients.reduce((total, ingredient) => total + ingredient[key], 0);
+  return { name: value.name.trim().slice(0, 100), grams: sum("grams"), carbs: sum("carbs"), protein: sum("protein"), fat: sum("fat"), kcal: sum("kcal"), confidence: value.confidence, note: value.note.trim().slice(0, 500), ingredients };
+}
 
 function extractText(response: OpenAIResponse) {
   if (response.output_text) return response.output_text;
@@ -53,7 +84,7 @@ export async function POST(request: NextRequest) {
 
     const content: Array<Record<string, unknown>> = [{
       type: "input_text",
-      text: `你是食品营养估算助手。请估算用户实际会吃下的整份食物，而不是每100克。优先采用用户给出的重量、包装营养标签和生熟状态；看不清或不知道时做保守的常见值估算。混合餐请把所有食材、烹调油和酱料合并为一个结果。热量应与三大营养素大致一致。结果只用于日常饮食记录，不作医疗建议。\n\n用户描述：${description || "未提供文字，请根据图片估算。"}`,
+      text: `你是食品营养估算助手。请把用户实际吃下的餐食拆成可独立记录的基础食材，不要合并成一道菜。每种食材返回实际食用重量和整份营养，不是每100克。名称注明生熟状态，例如熟米饭、熟鸡胸肉、烹调油。混合菜要分列主料、配料、实际摄入的烹调油和有营养贡献的酱料；相同食材合并，忽略无热量香辛料，不要虚构看不出的细小配料。优先使用用户提供的重量、包装标签和生熟状态，看不清时做保守常见值估算并在 note 说明。总营养由程序按 ingredients 相加。结果只用于日常饮食记录，不作医疗建议。\n\n用户描述：${description || "未提供文字，请根据图片估算。"}`,
     }];
     if (image) content.push({ type: "input_image", image_url: image, detail: "low" });
 
@@ -66,7 +97,7 @@ export async function POST(request: NextRequest) {
         reasoning: { effort: "low" },
         input: [{ role: "user", content }],
         text: { format: { type: "json_schema", name: "nutrition_estimate", strict: true, schema } },
-        max_output_tokens: 1200,
+        max_output_tokens: 1800,
       }),
     });
     const response = await upstream.json() as OpenAIResponse;
@@ -77,7 +108,8 @@ export async function POST(request: NextRequest) {
 
     const output = extractText(response);
     if (!output) return NextResponse.json({ error: "AI 没有返回可用的营养结果，请换一张更清楚的照片或补充文字。" }, { status: 502 });
-    const estimate = JSON.parse(output);
+    const estimate = normalizeEstimate(JSON.parse(output));
+    if (!estimate) return NextResponse.json({ error: "AI 返回的食材明细格式无效，请重新识别。" }, { status: 502 });
     return NextResponse.json({ estimate });
   } catch (error) {
     console.error("Food analysis failed", error);

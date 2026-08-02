@@ -35,6 +35,10 @@ const config = {
   aiMaxConcurrent: 2,
 };
 
+function aiEstimate(name, ...ingredients) {
+  return { name, ingredients, confidence: "high", note: "测试估算" };
+}
+
 test("配对、鉴权与版本同步", async () => {
   const app = await buildApp({ config, repository: new MemoryRepository(), logger: false });
   const denied = await app.inject({ method: "POST", url: "/v1/auth/pair", payload: { pairingCode: "wrong" } });
@@ -60,14 +64,19 @@ test("AI 识餐使用结构化结果并缓存", async () => {
     assert.equal(request.model, "gpt-5.6-luna");
     assert.deepEqual(request.reasoning, { effort: "none" });
     assert.equal(request.text.format.type, "json_schema");
-    return new Response(JSON.stringify({ output_text: JSON.stringify({ name: "米饭", grams: 150, carbs: 45, protein: 3.9, fat: 0.5, kcal: 200, confidence: "high", note: "按熟米饭估算" }) }), { status: 200, headers: { "content-type": "application/json" } });
+    assert.equal(request.text.format.schema.properties.ingredients.type, "array");
+    return new Response(JSON.stringify({ output_text: JSON.stringify(aiEstimate("米饭鸡胸肉", { name: "熟米饭", grams: 150, carbs: 45, protein: 3.9, fat: 0.5, kcal: 200 }, { name: "熟鸡胸肉", grams: 100, carbs: 0, protein: 25, fat: 4, kcal: 136 })) }), { status: 200, headers: { "content-type": "application/json" } });
   };
   const app = await buildApp({ config, repository, fetchImpl, logger: false });
   const paired = await app.inject({ method: "POST", url: "/v1/auth/pair", payload: { pairingCode: "correct-horse" } });
   const headers = { authorization: `Bearer ${paired.json().token}` };
-  const first = await app.inject({ method: "POST", url: "/v1/ai/analyze-food", headers, payload: { description: "150克熟米饭" } });
-  const second = await app.inject({ method: "POST", url: "/v1/ai/analyze-food", headers, payload: { description: "150克熟米饭" } });
+  const first = await app.inject({ method: "POST", url: "/v1/ai/analyze-food", headers, payload: { description: "150克熟米饭和100克熟鸡胸肉" } });
+  const second = await app.inject({ method: "POST", url: "/v1/ai/analyze-food", headers, payload: { description: "150克熟米饭和100克熟鸡胸肉" } });
   assert.equal(first.statusCode, 200);
+  assert.equal(first.json().estimate.ingredients.length, 2);
+  assert.equal(first.json().estimate.carbs, 45);
+  assert.equal(first.json().estimate.protein, 28.9);
+  assert.equal(first.json().estimate.grams, 250);
   assert.equal(first.json().quota.remaining, 99);
   assert.equal(second.json().cached, true);
   assert.equal(calls, 1);
@@ -87,7 +96,7 @@ test("配对请求体有独立大小上限", async () => {
 
 test("AI 每设备每日配额独立于 IP 限流", async () => {
   const limitedConfig = { ...config, aiDailyLimit: 1 };
-  const estimate = { name: "米饭", grams: 100, carbs: 25, protein: 2.6, fat: 0.3, kcal: 116, confidence: "high", note: "测试" };
+  const estimate = aiEstimate("米饭", { name: "熟米饭", grams: 100, carbs: 25, protein: 2.6, fat: 0.3, kcal: 116 });
   const app = await buildApp({
     config: limitedConfig,
     repository: new MemoryRepository(),
@@ -112,7 +121,7 @@ test("AI 并发超过上限时快速拒绝", async () => {
   let markStarted;
   const started = new Promise((resolve) => { markStarted = resolve; });
   const blocked = new Promise((resolve) => { releaseRequest = resolve; });
-  const estimate = { name: "苹果", grams: 150, carbs: 21, protein: 0.4, fat: 0.3, kcal: 78, confidence: "high", note: "测试" };
+  const estimate = aiEstimate("苹果", { name: "苹果", grams: 150, carbs: 21, protein: 0.4, fat: 0.3, kcal: 78 });
   const app = await buildApp({
     config: { ...config, aiMaxConcurrent: 1 },
     repository: new MemoryRepository(),

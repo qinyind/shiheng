@@ -144,6 +144,13 @@ struct Food: Identifiable, Codable, Hashable {
     var per100: Macro
 }
 
+private func foodNameKey(_ name: String) -> String {
+    name.lowercased()
+        .replacingOccurrences(of: "[（(][^）)]*[）)]", with: "", options: .regularExpression)
+        .replacingOccurrences(of: "实际摄入|可食部|一般|蒸煮|清蒸|水煮|熟制|熟|生", with: "", options: .regularExpression)
+        .replacingOccurrences(of: "[\\s/·、_-]", with: "", options: .regularExpression)
+}
+
 struct FoodEntry: Identifiable, Codable, Hashable {
     let id: UUID
     let dateKey: String
@@ -310,10 +317,25 @@ final class MealStore: ObservableObject {
         return try await ServerClient.shared.analyze(serverURL: serverURL, description: description, image: image)
     }
 
-    func add(estimate: NutritionEstimate, mealID: String, saveCustom: Bool) {
-        let food = Food(id: "ai-\(UUID().uuidString)", name: estimate.name, category: "AI 识别", per100: estimate.per100)
-        if saveCustom { customFoods.append(food) }
-        add(food: food, grams: estimate.grams, mealID: mealID)
+    func matchingFood(for ingredient: NutritionIngredient) -> Food? {
+        let key = foodNameKey(ingredient.name)
+        return foods.first { food in
+            let candidate = foodNameKey(food.name)
+            return candidate == key || (min(candidate.count, key.count) >= 3 && (candidate.contains(key) || key.contains(candidate)))
+        }
+    }
+
+    func add(estimate: NutritionEstimate, mealID: String, saveNewIngredients: Bool) {
+        for ingredient in estimate.ingredients {
+            let matched = matchingFood(for: ingredient)
+            let entryFood = Food(id: "ai-\(UUID().uuidString)", name: matched?.name ?? ingredient.name,
+                                 category: "AI 基础食材", per100: ingredient.per100)
+            if saveNewIngredients && matched == nil {
+                customFoods.append(Food(id: "custom-\(UUID().uuidString)", name: ingredient.name,
+                                        category: "我的食材", per100: ingredient.per100))
+            }
+            add(food: entryFood, grams: ingredient.grams, mealID: mealID)
+        }
     }
 
     func totals(for key: String) -> Macro {
@@ -779,7 +801,7 @@ private struct AddFoodView: View {
                     Button { showAI = true } label: {
                         Label("用文字或照片自动计算", systemImage: "camera.macro")
                     }
-                    Text(store.isServerPaired ? "AI 会估算整份食物，确认后可直接记入本餐并保存为自定义食物。" : "请先在“我的方案”中连接服务器。")
+                    Text(store.isServerPaired ? "AI 会拆成多种基础食材，按明细合计并分别记入本餐；未收录食材可加入食材库。" : "请先在“我的方案”中连接服务器。")
                         .font(.footnote).foregroundColor(.secondary)
                 }
             }
@@ -811,7 +833,7 @@ private struct AIAnalyzeView: View {
     @State private var estimate: NutritionEstimate?
     @State private var isLoading = false
     @State private var errorMessage = ""
-    @State private var saveCustom = true
+    @State private var saveNewIngredients = true
 
     var body: some View {
         NavigationView {
@@ -826,16 +848,36 @@ private struct AIAnalyzeView: View {
                     if let image { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 180).clipShape(RoundedRectangle(cornerRadius: 12)) }
                 }
                 if let estimate {
-                    Section("AI 估算 · 整份") {
+                    Section("AI 拆分 · \(estimate.ingredients.count) 种基础食材") {
+                        ForEach(estimate.ingredients) { ingredient in
+                            VStack(alignment: .leading, spacing: 7) {
+                                HStack {
+                                    Text(ingredient.name).font(.body.weight(.semibold))
+                                    Spacer()
+                                    Text("\(ingredient.grams, specifier: "%.1f")g").foregroundColor(.secondary)
+                                }
+                                Text("碳水 \(ingredient.carbs, specifier: "%.1f")g · 蛋白质 \(ingredient.protein, specifier: "%.1f")g · 脂肪 \(ingredient.fat, specifier: "%.1f")g · \(Int(ingredient.kcal.rounded())) kcal")
+                                    .font(.caption).foregroundColor(.secondary)
+                                if let matched = store.matchingFood(for: ingredient) {
+                                    Label("已匹配：\(matched.name)", systemImage: "checkmark.circle.fill")
+                                        .font(.caption2).foregroundColor(brandGreen)
+                                } else {
+                                    Label("未收录，可保存到食材库", systemImage: "plus.circle")
+                                        .font(.caption2).foregroundColor(.orange)
+                                }
+                            }.padding(.vertical, 3)
+                        }
+                    }
+                    Section("按食材明细合计") {
                         HStack { Text(estimate.name).font(.headline); Spacer(); Text("约 \(Int(estimate.grams.rounded()))g") }
                         HStack { Text("碳水"); Spacer(); Text("\(estimate.carbs, specifier: "%.1f")g") }
                         HStack { Text("蛋白质"); Spacer(); Text("\(estimate.protein, specifier: "%.1f")g") }
                         HStack { Text("脂肪"); Spacer(); Text("\(estimate.fat, specifier: "%.1f")g") }
                         HStack { Text("热量"); Spacer(); Text("\(Int(estimate.kcal.rounded())) kcal") }
                         Text(estimate.note).font(.caption).foregroundColor(.secondary)
-                        Toggle("保存为自定义食物", isOn: $saveCustom)
-                        Button("记入\(meal.name)") {
-                            store.add(estimate: estimate, mealID: meal.id, saveCustom: saveCustom)
+                        Toggle("保存未收录的基础食材", isOn: $saveNewIngredients)
+                        Button("按 \(estimate.ingredients.count) 种食材记入\(meal.name)") {
+                            store.add(estimate: estimate, mealID: meal.id, saveNewIngredients: saveNewIngredients)
                             dismiss()
                         }.font(.body.weight(.semibold))
                     }
