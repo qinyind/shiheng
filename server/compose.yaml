@@ -1,7 +1,10 @@
 services:
   api:
+    image: meal-meter-api:latest
     build: .
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-18080}:8080"
     environment:
       NODE_ENV: production
       PORT: 8080
@@ -33,24 +36,5 @@ services:
       timeout: 5s
       retries: 10
 
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    environment:
-      APP_DOMAIN: ${APP_DOMAIN}
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      api:
-        condition: service_healthy
-
 volumes:
   meal_meter_data:
-  caddy_data:
-  caddy_config:

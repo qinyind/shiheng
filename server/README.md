@@ -5,13 +5,15 @@
 ## 本地或服务器启动
 
 1. 复制 `.env.example` 为 `.env`。
-2. 为 `POSTGRES_PASSWORD`、`PAIRING_CODE` 设置不同的长随机值，填写域名 `APP_DOMAIN`。
+2. 为 `POSTGRES_PASSWORD`、`PAIRING_CODE` 设置不同的长随机值；如需调整本机代理目标端口，可设置 `API_HOST_PORT`。
 3. 如需 AI 识餐，填写 `OPENAI_API_KEY`；模型可通过 `OPENAI_MODEL` 显式调整。
-4. 将域名 A/AAAA 记录指向服务器，开放 TCP 80/443 和 UDP 443。
-5. 执行 `docker compose up -d --build`。
-6. 检查 `https://你的域名/health`。
+4. 执行 `docker compose up -d --build`。API 默认只监听宿主机的 `127.0.0.1:18080`，不会占用 80/443，也不会直接暴露数据库。
+5. 在服务器现有反向代理中，将专用域名（推荐）或 URL 路径转发到 `http://127.0.0.1:18080`，HTTPS 由该代理统一处理。
+6. 检查 `curl http://127.0.0.1:18080/health`，再检查反向代理后的 HTTPS 地址。
 
-首次启动会自动建立 PostgreSQL 表。Caddy 自动申请并续期 HTTPS 证书。手机在“我的方案 → 服务器同步”中填写 HTTPS 地址和配对码即可。
+首次启动会自动建立 PostgreSQL 表。手机在“我的方案 → 服务器同步”中填写反向代理后的 HTTPS 地址和配对码即可。
+
+如果使用 Nginx 专用域名，可将站点的 `location /` 代理到 `http://127.0.0.1:18080`。若使用 `/meal-meter/` 之类的路径前缀，代理时需去掉该前缀。
 
 ## API
 
