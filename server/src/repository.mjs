@@ -39,6 +39,14 @@ CREATE TABLE IF NOT EXISTS food_analyses (
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(user_id, input_hash)
 );
+
+CREATE TABLE IF NOT EXISTS ai_daily_usage (
+  device_id uuid NOT NULL REFERENCES device_tokens(id) ON DELETE CASCADE,
+  usage_date date NOT NULL,
+  request_count integer NOT NULL CHECK (request_count > 0),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (device_id, usage_date)
+);
 `;
 
 export const personalUserID = "00000000-0000-4000-8000-000000000001";
@@ -110,5 +118,19 @@ export class PostgresRepository {
        ON CONFLICT (user_id, input_hash) DO UPDATE SET estimate = EXCLUDED.estimate`,
       [userID, inputHash, JSON.stringify(estimate)],
     );
+  }
+
+  async consumeAIQuota(deviceID, dailyLimit) {
+    const result = await this.pool.query(
+      `INSERT INTO ai_daily_usage (device_id, usage_date, request_count)
+       VALUES ($1, (now() AT TIME ZONE 'Asia/Shanghai')::date, 1)
+       ON CONFLICT (device_id, usage_date) DO UPDATE
+       SET request_count = ai_daily_usage.request_count + 1, updated_at = now()
+       WHERE ai_daily_usage.request_count < $2
+       RETURNING request_count`,
+      [deviceID, dailyLimit],
+    );
+    const count = result.rows[0]?.request_count;
+    return count ? { allowed: true, remaining: dailyLimit - Number(count) } : { allowed: false, remaining: 0 };
   }
 }

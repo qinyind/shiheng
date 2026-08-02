@@ -7,6 +7,8 @@ import { analysisHash, analyzeFood } from "./nutrition.mjs";
 
 const maxStateBytes = 2_000_000;
 const maxImageLength = 12_000_000;
+const pairBodyLimit = 16_384;
+const syncBodyLimit = 2_200_000;
 
 function bearerToken(request) {
   const header = request.headers.authorization || "";
@@ -15,9 +17,12 @@ function bearerToken(request) {
 
 export async function buildApp({ config, repository, fetchImpl = fetch, logger = true }) {
   const app = Fastify({ logger, bodyLimit: 13_000_000, trustProxy: config.trustProxy || false });
+  let activeAIRequests = 0;
 
   await app.register(rateLimit, {
-    global: false,
+    global: true,
+    max: 120,
+    timeWindow: "1 minute",
     errorResponseBuilder: (_request, context) => ({
       statusCode: 429,
       error: "请求过于频繁",
@@ -25,9 +30,10 @@ export async function buildApp({ config, repository, fetchImpl = fetch, logger =
     }),
   });
 
-  app.get("/health", async () => ({ ok: true, service: "meal-meter", version: "0.1.0" }));
+  app.get("/health", { config: { rateLimit: false } }, async () => ({ ok: true, service: "meal-meter", version: "0.1.0" }));
 
   app.post("/v1/auth/pair", {
+    bodyLimit: pairBodyLimit,
     config: { rateLimit: { max: 10, timeWindow: "15 minutes", groupId: "pair" } },
   }, async (request, reply) => {
     const { pairingCode = "", deviceName = "iPhone" } = request.body || {};
@@ -48,7 +54,10 @@ export async function buildApp({ config, repository, fetchImpl = fetch, logger =
 
   app.get("/v1/sync", async (request) => repository.getState(request.identity.userID));
 
-  app.put("/v1/sync", async (request, reply) => {
+  app.put("/v1/sync", {
+    bodyLimit: syncBodyLimit,
+    config: { rateLimit: { max: 60, timeWindow: "1 minute", groupId: "sync-write" } },
+  }, async (request, reply) => {
     const { baseVersion, state } = request.body || {};
     if (!Number.isInteger(baseVersion) || baseVersion < 0 || !state || typeof state !== "object" || Array.isArray(state)) {
       return reply.code(400).send({ error: "同步数据格式无效" });
@@ -60,6 +69,7 @@ export async function buildApp({ config, repository, fetchImpl = fetch, logger =
   });
 
   app.post("/v1/ai/analyze-food", {
+    bodyLimit: 13_000_000,
     config: { rateLimit: { max: 20, timeWindow: "1 minute", groupId: "ai-food" } },
   }, async (request, reply) => {
     if (!config.aiKey) return reply.code(503).send({ error: "服务器尚未配置 AI_API_KEY" });
@@ -73,7 +83,13 @@ export async function buildApp({ config, repository, fetchImpl = fetch, logger =
     const inputHash = analysisHash(description, imageDataURL);
     const cached = await repository.getAnalysis(request.identity.userID, inputHash);
     if (cached) return { estimate: cached, cached: true };
+    if (activeAIRequests >= config.aiMaxConcurrent) {
+      return reply.code(503).send({ error: "AI 服务繁忙，请稍后重试" });
+    }
+    activeAIRequests += 1;
     try {
+      const quota = await repository.consumeAIQuota(request.identity.deviceID, config.aiDailyLimit);
+      if (!quota.allowed) return reply.code(429).send({ error: "今日 AI 识餐次数已用完" });
       const estimate = await analyzeFood({
         description,
         imageDataURL,
@@ -83,10 +99,12 @@ export async function buildApp({ config, repository, fetchImpl = fetch, logger =
         fetchImpl,
       });
       await repository.saveAnalysis(request.identity.userID, inputHash, estimate);
-      return { estimate, cached: false };
+      return { estimate, cached: false, quota: { remaining: quota.remaining } };
     } catch (error) {
       request.log.error(error);
       return reply.code(502).send({ error: "AI 服务暂时不可用，请稍后重试" });
+    } finally {
+      activeAIRequests -= 1;
     }
   });
 
