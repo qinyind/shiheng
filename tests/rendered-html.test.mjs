@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("contains the finished meal tracker experience", async () => {
@@ -16,25 +16,17 @@ test("contains the finished meal tracker experience", async () => {
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);
 });
 
-test("packages a self-contained iOS client without embedded ChatGPT sign-in", async () => {
-  const [config, index, assetNames] = await Promise.all([
-    readFile(new URL("../capacitor.config.ts", import.meta.url), "utf8"),
-    readFile(new URL("../capacitor-shell/index.html", import.meta.url), "utf8"),
-    readdir(new URL("../capacitor-shell/assets/", import.meta.url)),
+test("ships a native SwiftUI iOS client without a web runtime", async () => {
+  const [sceneDelegate, nativeView, project] = await Promise.all([
+    readFile(new URL("../ios/App/App/SceneDelegate.swift", import.meta.url), "utf8"),
+    readFile(new URL("../ios/App/App/MealTrackerView.swift", import.meta.url), "utf8"),
+    readFile(new URL("../ios/App/App.xcodeproj/project.pbxproj", import.meta.url), "utf8"),
   ]);
 
-  assert.doesNotMatch(config, /\bserver\s*:/);
-  assert.doesNotMatch(config, /chatgpt\.site|auth\.openai\.com/);
-  assert.match(index, /<div id="root"><\/div>/);
-  assert.match(index, /\.\/assets\/index-[^"']+\.js/);
-  assert.ok(assetNames.some((name) => /^index-.+\.js$/.test(name)));
-  assert.ok(assetNames.some((name) => /^index-.+\.css$/.test(name)));
-
-  const scriptName = assetNames.find((name) => /^index-.+\.js$/.test(name));
-  assert.ok(scriptName);
-  const script = await readFile(
-    new URL(`../capacitor-shell/assets/${scriptName}`, import.meta.url),
-    "utf8",
-  );
-  assert.match(script, /meal-meter-state-v1/);
+  assert.match(sceneDelegate, /UIHostingController\(rootView: MealTrackerRootView\(\)\)/);
+  assert.doesNotMatch(sceneDelegate, /Capacitor|WebKit|CAPBridgeViewController/);
+  assert.match(nativeView, /TabView/);
+  assert.match(nativeView, /meal-meter-native-state-v1/);
+  assert.match(nativeView, /HistoryView|FoodLibraryView|ProfileView/);
+  assert.doesNotMatch(project, /CapApp-SPM in Frameworks|public in Resources/);
 });
