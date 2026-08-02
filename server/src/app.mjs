@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import rateLimit from "@fastify/rate-limit";
 import { randomUUID } from "node:crypto";
 import { createDeviceToken, safeEqual } from "./security.mjs";
 import { personalUserID } from "./repository.mjs";
@@ -12,12 +13,23 @@ function bearerToken(request) {
   return header.startsWith("Bearer ") ? header.slice(7) : "";
 }
 
-export function buildApp({ config, repository, fetchImpl = fetch, logger = true }) {
-  const app = Fastify({ logger, bodyLimit: 13_000_000 });
+export async function buildApp({ config, repository, fetchImpl = fetch, logger = true }) {
+  const app = Fastify({ logger, bodyLimit: 13_000_000, trustProxy: config.trustProxy || false });
+
+  await app.register(rateLimit, {
+    global: false,
+    errorResponseBuilder: (_request, context) => ({
+      statusCode: 429,
+      error: "请求过于频繁",
+      message: `请在 ${context.after} 后重试`,
+    }),
+  });
 
   app.get("/health", async () => ({ ok: true, service: "meal-meter", version: "0.1.0" }));
 
-  app.post("/v1/auth/pair", async (request, reply) => {
+  app.post("/v1/auth/pair", {
+    config: { rateLimit: { max: 10, timeWindow: "15 minutes", groupId: "pair" } },
+  }, async (request, reply) => {
     const { pairingCode = "", deviceName = "iPhone" } = request.body || {};
     if (!safeEqual(pairingCode, config.pairingCode)) return reply.code(401).send({ error: "配对码错误" });
     const cleanName = String(deviceName).trim().slice(0, 80) || "iPhone";
@@ -47,7 +59,9 @@ export function buildApp({ config, repository, fetchImpl = fetch, logger = true 
     return result.value;
   });
 
-  app.post("/v1/ai/analyze-food", async (request, reply) => {
+  app.post("/v1/ai/analyze-food", {
+    config: { rateLimit: { max: 20, timeWindow: "1 minute", groupId: "ai-food" } },
+  }, async (request, reply) => {
     if (!config.aiKey) return reply.code(503).send({ error: "服务器尚未配置 AI_API_KEY" });
     const description = String(request.body?.description || "").trim();
     const imageDataURL = String(request.body?.imageDataURL || "");
@@ -72,7 +86,7 @@ export function buildApp({ config, repository, fetchImpl = fetch, logger = true 
       return { estimate, cached: false };
     } catch (error) {
       request.log.error(error);
-      return reply.code(502).send({ error: error.message || "AI 识餐失败" });
+      return reply.code(502).send({ error: "AI 服务暂时不可用，请稍后重试" });
     }
   });
 

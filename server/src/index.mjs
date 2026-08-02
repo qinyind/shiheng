@@ -5,7 +5,7 @@ import { buildApp } from "./app.mjs";
 const config = readConfig();
 const repository = new PostgresRepository(config.databaseURL);
 await repository.initialize();
-const app = buildApp({ config, repository });
+const app = await buildApp({ config, repository });
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, async () => {

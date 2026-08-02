@@ -50,10 +50,12 @@ export async function analyzeFood({ description, imageDataURL, apiKey, model, ba
     body: JSON.stringify({
       model,
       store: false,
+      reasoning: { effort: "none" },
       input: [{ role: "user", content }],
       text: { format: { type: "json_schema", name: "nutrition_estimate", strict: true, schema: nutritionSchema } },
       max_output_tokens: 1000,
     }),
+    signal: AbortSignal.timeout(90_000),
   });
   const body = await upstream.json();
   if (!upstream.ok) throw new Error(body.error?.message || "AI 服务暂时不可用");

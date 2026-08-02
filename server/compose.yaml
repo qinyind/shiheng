@@ -3,8 +3,6 @@ services:
     image: meal-meter-api:latest
     build: .
     restart: unless-stopped
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:${API_HOST_PORT:-18080}:8080"
     environment:
@@ -12,9 +10,10 @@ services:
       PORT: 8080
       DATABASE_URL: postgres://meal_meter:${POSTGRES_PASSWORD}@postgres:5432/meal_meter
       PAIRING_CODE: ${PAIRING_CODE}
-      AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      AI_BASE_URL: ${AI_BASE_URL:-http://cli-proxy-api:8317/v1}
       AI_API_KEY: ${AI_API_KEY:-}
-      AI_MODEL: ${AI_MODEL:-gpt-5.4-mini}
+      AI_MODEL: ${AI_MODEL:-gpt-5.6-luna}
     depends_on:
       postgres:
         condition: service_healthy
@@ -23,6 +22,9 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+    networks:
+      - default
+      - cpa
 
   postgres:
     image: postgres:17-alpine
@@ -41,3 +43,8 @@ services:
 
 volumes:
   meal_meter_data:
+
+networks:
+  cpa:
+    external: true
+    name: ${CPA_NETWORK_NAME:-cpamp_default}
