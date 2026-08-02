@@ -58,6 +58,8 @@ type DayMeta = {
   meals: MealPreset[];
 };
 type SyncStatus = "connecting" | "saving" | "synced" | "local";
+type MealRole = "breakfast" | "regular" | "pre" | "post" | "snack";
+type MealGuide = { summary: string; choices: string[]; cautions: string[] };
 
 const FOODS: Food[] = [
   { id: "rice", name: "熟米饭", category: "主食", carbs: 30, protein: 2.6, fat: 0.3, kcal: 133 },
@@ -75,6 +77,7 @@ const FOODS: Food[] = [
   { id: "milk", name: "全脂牛奶", category: "蛋白质", carbs: 4.8, protein: 3.2, fat: 3.3, kcal: 61 },
   { id: "whey", name: "蛋白粉", category: "蛋白质", carbs: 8, protein: 75, fat: 6, kcal: 386 },
   { id: "tofu", name: "豆腐", category: "蛋白质", carbs: 3, protein: 7, fat: 5, kcal: 85 },
+  { id: "jerky", name: "低糖瘦肉干", category: "蛋白质", carbs: 8, protein: 40, fat: 5, kcal: 237 },
   { id: "nuts", name: "混合坚果", category: "脂肪", carbs: 18, protein: 20, fat: 50, kcal: 602 },
   { id: "oil", name: "烹调油（实际摄入）", category: "脂肪", carbs: 0, protein: 0, fat: 100, kcal: 900 },
   { id: "broccoli", name: "西兰花", category: "蔬菜", carbs: 7, protein: 2.8, fat: 0.4, kcal: 34 },
@@ -173,6 +176,43 @@ function standardTimedMeals(preName: string, postName: string, dinnerName: strin
   ];
 }
 
+function mealRole(meal: MealPreset): MealRole {
+  if (meal.name.includes("零食") || meal.name.includes("夜宵")) return "snack";
+  if (meal.name.includes("练前")) return "pre";
+  if (meal.name.includes("练后")) return "post";
+  if (meal.name.includes("早饭")) return "breakfast";
+  return "regular";
+}
+
+function guideForMeal(meal: MealPreset, goal: Goal, dayType: DayType): MealGuide {
+  const role = mealRole(meal);
+  if (role === "pre") return {
+    summary: "这不是正式一餐：只垫少量易消化碳水，吃到五六分饱即可开练。",
+    choices: ["香蕉：小根约20g、大根约30g碳水", "娃哈哈八宝粥：约30–47g碳水/罐", "旺仔小馒头：约37g碳水/袋", "脉动等运动饮料：约30g碳水/瓶"],
+    cautions: ["蛋白质不用专门吃；若刚好吃正餐，可以搭配少量瘦肉", "原则上不吃脂肪，避开非瘦肉、糖油混合物和吸油菜", "吃完不需要专门等待，但不要吃到全饱"],
+  };
+  if (role === "post") return {
+    summary: "全天最大餐，最好练完后半小时内开始吃；先碳水和蛋白质。",
+    choices: ["高GI主食：一般米饭、馒头、花卷、熟面", "蛋白质：一般熟瘦肉、去皮禽肉、鱼虾贝", "来不及吃正餐：便携快碳 + 蛋白粉"],
+    cautions: ["水果只能占一部分碳水，不能替代主要淀粉主食", "意面、燕麦麸皮等低GI或高纤主食不作为练后主要碳水", "蔬菜少吃、后吃；与一般正餐的进食顺序相反"],
+  };
+  if (role === "snack") return {
+    summary: "原表的10%碳水用于抵扣牛奶、蔬菜和调料的漏算，不是让你再吃一份主食。",
+    choices: ["低糖牛肉干 / 鸡肉干", "鸡蛋、乳制品", "蔬菜、无糖饮料"],
+    cautions: ["不专门吃面包、米面、奶茶或水果", "不吃饼干、膨化食品、甜品糕点等糖油混合物", "不吃也可以，把少量额度分到其他正餐"],
+  };
+  if (role === "breakfast") return {
+    summary: "早餐同时建立碳水、蛋白质和基础脂肪来源。",
+    choices: ["主食任选：米饭/粥、馒头、切片面包、燕麦、薯类", "蛋白质优先：鸡蛋 + 纯牛奶；或鸡蛋", "鸡蛋可水煮、茶叶蛋、蒸蛋羹"],
+    cautions: ["不要把煎蛋当作原表中的鸡蛋选择", goal === "gain" ? "增肌表还安排每天约30g坚果作为脂肪来源" : "减脂表用蛋黄牛奶和正餐带油瘦肉覆盖脂肪，不建议逐克追脂肪", "如果完全不吃蛋黄和牛奶，需要按脂肪缺乏规则补充"],
+  };
+  return {
+    summary: dayType === "rest" ? "休息日正餐：主食配瘦肉，蔬菜先吃、多吃。" : "其他正餐：主食配瘦肉，蔬菜先吃、多吃。",
+    choices: ["主食：一般米饭、馒头、熟面、红薯、土豆、玉米", "瘦肉：去皮鸡鸭、无白色脂肪层的猪牛羊、鱼虾贝、肝肾肚血", "蔬菜不用定量，争取每天都吃"],
+    cautions: ["红薯、土豆、玉米、山药、芋头属于碳水主食，不算蔬菜", "避开肥牛肥羊、排骨牛排、肉馅肉丸、炸肉等非瘦肉", goal === "cut" ? "重油菜在盘边刮油或简单过水；减脂期严格排除糖油混合物" : "重油菜尽量刮油；糖油混合物增肌期也只偶尔吃"],
+  };
+}
+
 const DEFAULT_PROFILE: Profile = {
   sex: "male",
   age: 27,
@@ -259,7 +299,7 @@ function Progress({ label, value, target, color }: { label: string; value: numbe
   );
 }
 
-function getRecommendation(target: Macro, total: Macro) {
+function getRecommendation(target: Macro, total: Macro, meal: MealPreset) {
   const remain = {
     carbs: target.carbs - total.carbs,
     protein: target.protein - total.protein,
@@ -268,19 +308,77 @@ function getRecommendation(target: Macro, total: Macro) {
   if (remain.carbs < -5 || remain.protein < -5 || remain.fat < -4) {
     return { text: "本餐已有指标超出，接下来优先选择无油蔬菜或停止加餐。", foodId: "broccoli", grams: 150 };
   }
+  const role = mealRole(meal);
+  if (role === "snack") {
+    if (remain.protein > 10) {
+      const food = FOODS.find((f) => f.id === "jerky")!;
+      return { text: `按原表不再补主食；若确实饿，可用约 ${round((remain.protein / food.protein) * 100)}g 低糖瘦肉干补蛋白质。`, foodId: food.id, grams: round((remain.protein / food.protein) * 100) };
+    }
+    return { text: "这餐的碳水是漏算预留，不必吃满；可选鸡蛋、乳制品、蔬菜或无糖饮料。", foodId: "egg", grams: 50 };
+  }
+  if (role === "pre") {
+    if (remain.carbs > 8) {
+      const food = FOODS.find((f) => f.id === "banana")!;
+      return { text: `练前只垫碳水：可吃约 ${round((remain.carbs / food.carbs) * 100)}g 香蕉，五六分饱即可，不必补蛋白质和脂肪。`, foodId: food.id, grams: round((remain.carbs / food.carbs) * 100) };
+    }
+    return { text: "练前碳水已接近目标，不要为了吃满而继续加餐，准备训练即可。", foodId: "banana", grams: 80 };
+  }
   if (remain.protein > 10) {
+    if (role === "breakfast") {
+      const eggs = Math.max(1, Math.ceil(remain.protein / 6));
+      return { text: `早餐还差约 ${round(remain.protein)}g 蛋白质，可安排约 ${eggs} 个全蛋；也可用鸡蛋加纯牛奶组合。`, foodId: "egg", grams: eggs * 50 };
+    }
     const food = FOODS.find((f) => f.id === "chicken")!;
-    return { text: `还差约 ${round(remain.protein)}g 蛋白质，可补 ${round((remain.protein / food.protein) * 100)}g 熟鸡胸肉。`, foodId: food.id, grams: round((remain.protein / food.protein) * 100) };
+    return { text: `${role === "post" ? "练后优先补足" : "还差约"} ${round(remain.protein)}g 蛋白质，可选约 ${round((remain.protein / food.protein) * 100)}g 一般熟瘦肉。`, foodId: food.id, grams: round((remain.protein / food.protein) * 100) };
   }
   if (remain.carbs > 12) {
-    const food = FOODS.find((f) => f.id === "rice")!;
-    return { text: `还差约 ${round(remain.carbs)}g 碳水，可补 ${round((remain.carbs / food.carbs) * 100)}g 熟米饭。`, foodId: food.id, grams: round((remain.carbs / food.carbs) * 100) };
+    const food = FOODS.find((f) => f.id === (role === "breakfast" ? "oats" : "rice"))!;
+    const amount = round((remain.carbs / food.carbs) * 100);
+    return { text: role === "post" ? `练后还差约 ${round(remain.carbs)}g 碳水，可补 ${amount}g 一般熟米饭；水果不能作为主要来源。` : `还差约 ${round(remain.carbs)}g 碳水，可选约 ${amount}g ${food.name}。`, foodId: food.id, grams: amount };
   }
-  if (remain.fat > 7) {
-    const food = FOODS.find((f) => f.id === "nuts")!;
-    return { text: `脂肪还有余量，可补约 ${round((remain.fat / food.fat) * 100)}g 坚果。`, foodId: food.id, grams: round((remain.fat / food.fat) * 100) };
-  }
-  return { text: "本餐已经接近目标，搭配一份清淡蔬菜即可。", foodId: "broccoli", grams: 150 };
+  return { text: role === "post" ? "练后餐已接近目标；如吃蔬菜，请少吃、后吃。" : "本餐已经接近目标，按原表先吃、多吃蔬菜即可。", foodId: "broccoli", grams: 150 };
+}
+
+function PlanGuidance({ profile, dayType, bmi, planLabel }: { profile: Profile; dayType: DayType; bmi: number; planLabel: string }) {
+  const isCut = profile.goal === "cut";
+  const cardio = !isCut
+    ? "原表一般建议增肌期不做有氧，把恢复能力留给稳定力训。"
+    : profile.weight > 80
+      ? "原表建议80kg以上减脂者先不做有氧，优先用饮食建立缺口。"
+      : profile.weight >= 70
+        ? `你目前${profile.weight}kg：原表建议70–80kg先不做有氧；感觉饥饿时再加有氧，并等量增加饮食。`
+        : "原表建议70kg以下减脂者每周约2小时有氧；长有氧与力训隔开。";
+  const trend = isCut
+    ? "用1–2周体重趋势判断，理论参考为2周约下降2%；两三天变化多是水分和食糜，不用据此改配额。"
+    : `按月看增重：${profile.sex === "male" ? "男性一般不超过1kg/月" : "女性一般不超过0.5kg/月"}，一个月完全不长再增加饮食。`;
+  const switchPoint = isCut
+    ? `普通人不追求极低体脂；原表建议${profile.sex === "male" ? "男性BMI 22–23" : "女性BMI 20–21"}附近转增肌。你目前BMI ${round(bmi, 1)}。`
+    : `若介意发胖，原表建议${profile.sex === "male" ? "男性BMI 23–24" : "女性BMI 21–22"}附近转减脂。你目前BMI ${round(bmi, 1)}。`;
+  const fatRule = isCut
+    ? "男性约60g、女性约50g；不必逐克细算。早餐蛋黄牛奶 + 正餐带油瘦肉通常即可；缺少这些来源时，可补30g坚果、3个全蛋或1盒全脂牛奶。"
+    : "男性约80g、女性约70g；早餐蛋黄牛奶 + 正餐带油瘦肉 + 每天约30g坚果。若蛋奶和菜油都不足，按原表脂肪缺乏规则补充。";
+
+  return (
+    <section className="plan-guidance" id="guidance">
+      <div className="guide-heading"><div><p className="eyebrow">03 · Excel 原表指导</p><h2>不只算数字，也告诉你怎么吃</h2></div><span>{planLabel} · {dayType === "training" ? "力训日" : "休息日"}</span></div>
+      <div className="guide-highlight"><strong>{profile.timing === "beforeDinner" && dayType === "training" ? "晚饭是全天最大练后餐" : dayType === "rest" ? "不力训就是休息日，与是否做有氧无关" : "训练日按练前、练后位置分配餐次"}</strong><p>{profile.timing === "beforeDinner" && dayType === "training" ? "餐序：早饭 → 午饭（其他餐）→ 练前餐 → 晚饭（练后餐）→ 少量零食/夜宵预留。" : "具体食物选择和进食顺序已写入下方每一餐。"}</p></div>
+      <div className="guide-grid">
+        <article><span>体重趋势</span><p>{trend}</p></article>
+        <article><span>何时换阶段</span><p>{switchPoint}</p></article>
+        <article><span>力训与有氧</span><p>{profile.goal === "gain" ? "稳定力训3–5次/周是增肌前提。" : "力训不是制造缺口的必需项，但每周3–5次有助于减少肌肉损失。"} {cardio}</p></article>
+        <article><span>脂肪怎么吃</span><p>{fatRule}</p></article>
+      </div>
+      <details className="food-boundaries">
+        <summary>查看原表的食物分类、置换与禁忌</summary>
+        <div>
+          <section><h3>碳水主食</h3><p>米饭一般按30%碳水率；馒头/花卷/切片面包50%；蒸煮红薯和土豆18%；速食燕麦60%。练后优先米饭、馒头、熟面等高GI主食。</p></section>
+          <section><h3>蛋白质</h3><p>一般熟瘦肉按25%蛋白质率；柴感熟肉30%；低糖瘦肉干40%；蛋白粉约75%。瘦肉只包括去皮禽肉、无白色脂肪层的猪牛羊、鱼虾贝和部分内脏。</p></section>
+          <section><h3>蔬菜与水果</h3><p>蔬菜不用定量。水果必须计入碳水并置换主食：水果10g碳水≈少吃30g一般熟米饭；练后水果不能替代主要淀粉主食。</p></section>
+          <section><h3>平时排除</h3><p>高脂肉、肉馅肉丸、肥牛肥羊、排骨牛排，以及饼干、蛋糕、油条、花式面包、膨化食品等糖油混合物。复杂混合菜不要直接套用营养软件的单一数据。</p></section>
+        </div>
+      </details>
+    </section>
+  );
 }
 
 function AiFoodAnalyzer({ onSave }: { onSave: (food: Food) => void }) {
@@ -362,7 +460,7 @@ function AiFoodAnalyzer({ onSave }: { onSave: (food: Food) => void }) {
   return (
     <section className="ai-card" id="ai-food">
       <div className="ai-copy">
-        <p className="eyebrow">03 · AI 智能识餐</p>
+        <p className="eyebrow">04 · AI 智能识餐</p>
         <h2>说出来，或拍下来</h2>
         <p>描述食物、重量和烹饪方式，或拍摄餐盘 / 营养标签。AI 会估算整份营养；保存前可以手动校正。</p>
         <div className="ai-tips"><span>写清生重 / 熟重</span><span>带上油与酱料</span><span>照片尽量俯拍</span></div>
@@ -395,11 +493,13 @@ function AiFoodAnalyzer({ onSave }: { onSave: (food: Food) => void }) {
   );
 }
 
-function MealCard({ meal, target, entries, foods, onAdd, onRemove }: {
+function MealCard({ meal, target, entries, foods, goal, dayType, onAdd, onRemove }: {
   meal: MealPreset;
   target: Macro;
   entries: FoodEntry[];
   foods: Food[];
+  goal: Goal;
+  dayType: DayType;
   onAdd: (entry: FoodEntry) => void;
   onRemove: (id: string) => void;
 }) {
@@ -407,7 +507,8 @@ function MealCard({ meal, target, entries, foods, onAdd, onRemove }: {
   const [grams, setGrams] = useState(100);
   const [custom, setCustom] = useState({ name: "", carbs: 0, protein: 0, fat: 0, kcal: 0 });
   const total = useMemo(() => sumMacros(entries), [entries]);
-  const recommendation = getRecommendation(target, total);
+  const recommendation = getRecommendation(target, total, meal);
+  const excelGuide = guideForMeal(meal, goal, dayType);
   const maxRatio = Math.max(
     target.carbs ? total.carbs / target.carbs : total.carbs ? 2 : 0,
     target.protein ? total.protein / target.protein : total.protein ? 2 : 0,
@@ -485,6 +586,12 @@ function MealCard({ meal, target, entries, foods, onAdd, onRemove }: {
       <button className="recommendation" onClick={applyRecommendation}>
         <span className="spark">✦</span><span><b>本餐推荐</b>{recommendation.text}</span><span className="arrow">↗</span>
       </button>
+      <div className="meal-excel-guide">
+        <div className="meal-guide-title"><span>Excel 原表建议</span><p>{excelGuide.summary}</p></div>
+        <div className="meal-guide-chips">{excelGuide.choices.slice(0, 3).map((choice) => <span key={choice}>{choice}</span>)}</div>
+        <p className="meal-guide-warning"><b>注意</b>{excelGuide.cautions[0]}</p>
+        <details><summary>展开全部建议与注意事项</summary><div><ul>{excelGuide.choices.map((choice) => <li key={choice}>{choice}</li>)}</ul><ul>{excelGuide.cautions.map((caution) => <li key={caution}>{caution}</li>)}</ul></div></details>
+      </div>
     </article>
   );
 }
@@ -764,11 +871,13 @@ export default function Home() {
           </div>
         </section>
 
+        <PlanGuidance profile={profile} dayType={effectiveDayType} bmi={bmi} planLabel={currentPlanLabel} />
+
         <AiFoodAnalyzer onSave={saveCustomFood} />
 
         <div className="section-heading">
-          <div><p className="eyebrow">04 · 逐餐记录</p><h2>每一餐都有清楚的边界</h2></div>
-          <p>选择食物并输入可食重量，系统按完整营养数据计算。包装食品请优先使用“自定义食物”填写标签数值。</p>
+          <div><p className="eyebrow">05 · 逐餐记录</p><h2>每一餐都有清楚的边界</h2></div>
+          <p>每餐同时显示指标、动态补充建议，以及 Excel 原表规定的食物选择、进食顺序和注意事项。</p>
         </div>
 
         <section className="meal-grid">
@@ -779,13 +888,13 @@ export default function Home() {
               fat: dailyTarget.fat * meal.proteinShare,
               kcal: dailyTarget.kcal * ((meal.carbShare + meal.proteinShare) / 2),
             };
-            return <MealCard key={meal.id} meal={meal} target={target} entries={dateLog[meal.id] || []} foods={availableFoods} onAdd={(entry) => addEntry(meal.id, entry)} onRemove={(id) => removeEntry(meal.id, id)} />;
+            return <MealCard key={meal.id} meal={meal} target={target} entries={dateLog[meal.id] || []} foods={availableFoods} goal={profile.goal} dayType={effectiveDayType} onAdd={(entry) => addEntry(meal.id, entry)} onRemove={(id) => removeEntry(meal.id, id)} />;
           })}
         </section>
 
         <section className="history-section" id="history">
           <div className="section-heading history-heading">
-            <div><p className="eyebrow">05 · 历史记录</p><h2>每天的变化，都留得住</h2></div>
+            <div><p className="eyebrow">06 · 历史记录</p><h2>每天的变化，都留得住</h2></div>
             <p>记录按日期保存在当前设备；每一天会锁定当时的方案、体重和目标，之后调整参数不会改写旧记录。</p>
           </div>
           {historyRows.length ? (
@@ -812,7 +921,7 @@ export default function Home() {
       </section>
       <nav className="mobile-nav" aria-label="移动端导航">
         <button onClick={() => scrollTo("today")}><span>●</span>今日</button>
-        <button onClick={() => scrollTo("ai-food")}><span>✦</span>识餐</button>
+        <button onClick={() => scrollTo("guidance")}><span>▤</span>指导</button>
         <button onClick={() => scrollTo("history")}><span>◷</span>历史</button>
         <button onClick={() => { setSettingsOpen(true); scrollTo("settings"); }}><span>⌁</span>设置</button>
       </nav>

@@ -91,6 +91,52 @@ struct MealPreset: Identifiable, Hashable {
     let proteinShare: Double
 }
 
+private enum MealRole { case breakfast, regular, pre, post, snack }
+
+private struct MealGuidance {
+    let summary: String
+    let choices: [String]
+    let cautions: [String]
+}
+
+private func role(for meal: MealPreset) -> MealRole {
+    if meal.name.contains("零食") || meal.name.contains("夜宵") { return .snack }
+    if meal.name.contains("练前") { return .pre }
+    if meal.name.contains("练后") { return .post }
+    if meal.name.contains("早饭") { return .breakfast }
+    return .regular
+}
+
+private func excelGuidance(for meal: MealPreset, goal: Goal, dayType: DayType) -> MealGuidance {
+    switch role(for: meal) {
+    case .pre:
+        return MealGuidance(
+            summary: "不是正式一餐：只垫少量碳水，五六分饱即可开练。",
+            choices: ["香蕉：小根约20g、大根约30g碳水", "八宝粥：约30–47g碳水/罐", "旺仔小馒头：约37g碳水/袋", "运动饮料：约30g碳水/瓶"],
+            cautions: ["蛋白质不用专门吃", "原则上不吃脂肪", "吃完不用专门等待，但不要吃到全饱"])
+    case .post:
+        return MealGuidance(
+            summary: "全天最大餐，最好练完后半小时内开始吃；先碳水和蛋白质。",
+            choices: ["高GI主食：米饭、馒头、花卷、熟面", "蛋白质：一般熟瘦肉、去皮禽肉、鱼虾贝", "来不及吃正餐：便携快碳 + 蛋白粉"],
+            cautions: ["水果不能替代主要淀粉主食", "意面、燕麦麸皮不作练后主要碳水", "蔬菜少吃、后吃"])
+    case .snack:
+        return MealGuidance(
+            summary: "10%碳水是牛奶、蔬菜和调料的漏算预留，不是再吃一份主食。",
+            choices: ["低糖瘦肉干", "鸡蛋、乳制品", "蔬菜、无糖饮料"],
+            cautions: ["不专门吃面包、米面、奶茶或水果", "不吃饼干、膨化、甜品糕点", "不吃可把少量额度分到其他正餐"])
+    case .breakfast:
+        return MealGuidance(
+            summary: "早餐同时建立碳水、蛋白质和基础脂肪来源。",
+            choices: ["主食任选：米饭/粥、馒头、切片面包、燕麦、薯类", "蛋白质优先：鸡蛋 + 纯牛奶；或鸡蛋", "鸡蛋可水煮、茶叶蛋、蒸蛋羹"],
+            cautions: ["不要用煎蛋替代", goal == .gain ? "增肌表另安排每天约30g坚果" : "减脂表不建议逐克追脂肪", "不吃蛋黄牛奶时要防止脂肪不足"])
+    case .regular:
+        return MealGuidance(
+            summary: dayType == .rest ? "休息日正餐：主食配瘦肉，蔬菜先吃、多吃。" : "其他正餐：主食配瘦肉，蔬菜先吃、多吃。",
+            choices: ["主食：米饭、馒头、熟面、红薯、土豆、玉米", "瘦肉：去皮禽肉、无脂肪层的猪牛羊、鱼虾贝", "蔬菜不用定量"],
+            cautions: ["红薯、土豆、玉米、山药、芋头是主食", "避开肥牛肥羊、排骨牛排、肉馅肉丸", goal == .cut ? "减脂期严格排除糖油混合物" : "增肌期糖油混合物也只偶尔吃"])
+    }
+}
+
 struct Food: Identifiable, Codable, Hashable {
     let id: String
     var name: String
@@ -504,21 +550,47 @@ private struct TodayView: View {
     }
 
     private var recommendation: some View {
-        let leftCarbs = max(0, store.target.carbs - store.consumed.carbs)
-        let leftProtein = max(0, store.target.protein - store.consumed.protein)
-        return HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "sparkles")
-                .font(.title3)
-                .foregroundColor(brandGreen)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("下一餐建议").font(.subheadline.weight(.semibold))
-                Text(leftProtein > 25
-                     ? "蛋白质还差 \(Int(leftProtein.rounded()))g，优先鸡胸肉、鱼虾或蛋白粉；碳水还可安排 \(Int(leftCarbs.rounded()))g。"
-                     : "蛋白质接近目标，按剩余 \(Int(leftCarbs.rounded()))g 碳水选择米饭、红薯或水果。")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+        let isCut = store.profile.goal == .cut
+        let trend = isCut
+            ? "看1–2周体重趋势；两三天变化多是水分和食糜，不据此改配额。"
+            : "按月看增重；男性一般不超过1kg/月，女性一般不超过0.5kg/月。"
+        let cardio: String
+        if !isCut {
+            cardio = "增肌期一般不做有氧，稳定力训3–5次/周。"
+        } else if store.profile.weight >= 70 && store.profile.weight <= 80 {
+            cardio = "70–80kg先不做有氧；感觉饥饿时再增加，并等量补饮食。"
+        } else if store.profile.weight < 70 {
+            cardio = "70kg以下每周约2小时有氧。"
+        } else {
+            cardio = "80kg以上先不做有氧。"
+        }
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "book.closed.fill").font(.title3).foregroundColor(brandGreen)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Excel 原表指导").font(.subheadline.weight(.semibold))
+                    Text(store.planLabel).font(.caption2).foregroundColor(brandGreen)
+                }
+                Spacer()
             }
-            Spacer()
+            Text(store.profile.timing == .beforeDinner && store.effectiveDayType == .training
+                 ? "晚饭是全天最大练后餐：早饭 → 午饭 → 练前餐 → 晚饭练后餐。"
+                 : store.effectiveDayType == .rest ? "不力训就是休息日，与是否做有氧无关。" : "食物按练前、练后位置安排。")
+                .font(.caption.weight(.semibold))
+            Label(trend, systemImage: "chart.line.uptrend.xyaxis").font(.caption).foregroundColor(.secondary)
+            Label(cardio, systemImage: "figure.strengthtraining.traditional").font(.caption).foregroundColor(.secondary)
+            DisclosureGroup("食物分类与总注意事项") {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("• 一般米饭按30%碳水率；一般熟瘦肉按25%蛋白质率。")
+                    Text("• 蔬菜不用定量；水果必须计入碳水并置换主食。")
+                    Text("• 避开高脂肉、肉馅肉丸和饼干蛋糕等糖油混合物。")
+                    Text("• 复杂混合菜不要直接套用营养软件的单一数据。")
+                }
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .padding(.top, 6)
+            }
+            .font(.caption.weight(.semibold))
         }
         .padding(16)
         .background(brandLime.opacity(0.20), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -594,6 +666,7 @@ private struct MealCard: View {
     var body: some View {
         let target = store.target(for: meal)
         let consumed = store.consumed(for: meal.id)
+        let guidance = excelGuidance(for: meal, goal: store.profile.goal, dayType: store.effectiveDayType)
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
@@ -614,6 +687,26 @@ private struct MealCard: View {
                 smallMetric("脂肪", consumed.fat, target.fat)
                 smallMetric("热量", consumed.kcal, target.kcal, unit: "k")
             }
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Excel 原表建议", systemImage: "book.closed")
+                    .font(.caption.weight(.semibold)).foregroundColor(brandGreen)
+                Text(guidance.summary).font(.caption).foregroundColor(.secondary)
+                ForEach(Array(guidance.choices.prefix(2)), id: \.self) { choice in
+                    Text("• \(choice)").font(.caption2).foregroundColor(.secondary)
+                }
+                Text("注意：\(guidance.cautions[0])")
+                    .font(.caption2.weight(.semibold)).foregroundColor(.orange)
+                DisclosureGroup("展开全部建议") {
+                    VStack(alignment: .leading, spacing: 5) {
+                        ForEach(guidance.choices, id: \.self) { Text("• \($0)").font(.caption2) }
+                        ForEach(guidance.cautions, id: \.self) { Text("⚠︎ \($0)").font(.caption2) }
+                    }
+                    .foregroundColor(.secondary).padding(.top, 5)
+                }
+                .font(.caption2.weight(.semibold))
+            }
+            .padding(12)
+            .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             if store.entries(for: meal.id).isEmpty {
                 Button(action: onAdd) {
                     Label("记录这餐吃了什么", systemImage: "plus.circle")
