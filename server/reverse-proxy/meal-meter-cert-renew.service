@@ -1,0 +1,10 @@
+[Unit]
+Description=Renew Meal Meter public IP certificate
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/reverse-proxy
+ExecStart=/usr/bin/docker compose --profile maintenance run --rm certbot renew --quiet
+ExecStartPost=/usr/bin/docker compose exec -T gateway caddy reload --config /etc/caddy/Caddyfile
