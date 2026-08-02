@@ -12,6 +12,16 @@ type PersonalServerResponse = {
   error?: string;
 };
 
+async function readJSONResponse<T>(response: Response): Promise<T | null> {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
+
 const schema = {
   type: "object",
   additionalProperties: false,
@@ -96,7 +106,11 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify({ description, imageDataURL: image || undefined }),
         signal: AbortSignal.timeout(95_000),
       });
-      const response = await upstream.json() as PersonalServerResponse;
+      const response = await readJSONResponse<PersonalServerResponse>(upstream);
+      if (!response) {
+        console.error("AI upstream returned a non-JSON response", { status: upstream.status, contentType: upstream.headers.get("content-type") });
+        return NextResponse.json({ error: `AI 服务连接异常（${upstream.status}），请稍后重试。` }, { status: 502 });
+      }
       if (!upstream.ok || !response.estimate) {
         return NextResponse.json({ error: response.error || "AI 服务暂时不可用，请稍后重试。" }, { status: upstream.status >= 500 ? 502 : upstream.status });
       }

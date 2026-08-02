@@ -482,7 +482,13 @@ function AiFoodAnalyzer({ foods, onSaveMany }: { foods: Food[]; onSaveMany: (foo
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ description: description.trim(), image: imageData || undefined }),
       });
-      const data = await response.json() as { estimate?: AiEstimate; error?: string };
+      const responseText = await response.text();
+      let data: { estimate?: AiEstimate; error?: string } = {};
+      try {
+        data = JSON.parse(responseText) as { estimate?: AiEstimate; error?: string };
+      } catch {
+        throw new Error(`服务器响应异常（${response.status}），请稍后重试。`);
+      }
       if (!response.ok || !data.estimate) throw new Error(data.error || "暂时无法完成识别，请稍后重试。");
       setEstimate(data.estimate);
       setSaveFlags(data.estimate.ingredients.map((ingredient) => !matchingFood(ingredient.name, foods)));
