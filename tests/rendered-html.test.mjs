@@ -8,7 +8,8 @@ test("contains the finished meal tracker experience", async () => {
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
   ]);
 
-  assert.match(layout, /title:\s*"餐标｜每日饮食指标与逐餐记录"/);
+  assert.match(layout, /title:\s*"食衡｜每日饮食指标与逐餐记录"/);
+  assert.match(page, /aria-label="食衡首页"/);
   assert.match(page, /5 减脂 · 晚饭前练/);
   assert.match(page, /13 增肌 · 晚饭前练/);
   assert.match(page, /meal-meter-state-v1/);

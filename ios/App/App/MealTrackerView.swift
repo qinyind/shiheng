@@ -533,7 +533,7 @@ private struct TodayView: View {
                 .padding(.bottom, 28)
             }
             .background(Color(UIColor.systemGroupedBackground).ignoresSafeArea())
-            .navigationTitle("餐标")
+            .navigationTitle("食衡")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Text(store.effectiveDayType.title)

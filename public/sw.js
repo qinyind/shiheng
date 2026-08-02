@@ -1,4 +1,4 @@
-const CACHE = "meal-meter-v4";
+const CACHE = "shiheng-v1";
 const SHELL = ["/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

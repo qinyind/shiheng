@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#0d6b4d"/>
+  <circle cx="300" cy="315" r="214" fill="#fff9e8"/>
+  <circle cx="300" cy="315" r="190" fill="none" stroke="#e8dfc9" stroke-width="11"/>
+  <circle cx="226" cy="209" r="21" fill="#f1b654"/>
+  <circle cx="300" cy="195" r="21" fill="#e66b55"/>
+  <circle cx="374" cy="209" r="21" fill="#45a7a1"/>
+  <g fill="none" stroke="#0d6b4d" stroke-width="27" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M176 274h248"/>
+    <path d="M300 255v176"/>
+    <path d="M226 438h148"/>
+    <path d="m300 274-38 52h76z" fill="#0d6b4d" stroke="none"/>
+    <path d="m210 280-49 82M390 280l49 82"/>
+    <path d="M120 365c12 51 49 77 90 77s78-26 90-77H120z" fill="#b9e44c"/>
+    <path d="M300 365c12 51 49 77 90 77s78-26 90-77H300z" fill="#b9e44c"/>
+  </g>
+  <text x="600" y="270" fill="#fff9e8" font-family="Noto Sans CJK SC, PingFang SC, sans-serif" font-size="132" font-weight="800" letter-spacing="-8">食衡</text>
+  <text x="606" y="355" fill="#b9e44c" font-family="Noto Sans CJK SC, PingFang SC, sans-serif" font-size="38" font-weight="700">把目标落到每一餐</text>
+  <text x="606" y="420" fill="#d6e6dc" font-family="Noto Sans CJK SC, PingFang SC, sans-serif" font-size="25">AI 识餐 · 营养平衡 · 逐餐记录</text>
+</svg>

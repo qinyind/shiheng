@@ -1,4 +1,4 @@
-# 餐标 iOS 原生版构建
+# 食衡 iOS 原生版构建
 
 客户端是纯 SwiftUI，应用标识为 `cn.mealmeter.app`，最低支持 iOS 15。最终 target 不包含 WebView、网页资源或 Capacitor 运行时。
 

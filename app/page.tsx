@@ -872,7 +872,7 @@ export default function Home() {
     <main>
       <section className="hero">
         <nav className="topbar">
-          <a className="brand" href="#top" aria-label="餐标首页"><span>餐</span>餐标</a>
+          <a className="brand" href="#top" aria-label="食衡首页"><span className="brand-icon" aria-hidden="true" />食衡</a>
           <div className="top-note"><i />{syncStatus === "synced" ? "云端已同步" : syncStatus === "saving" ? "正在同步…" : syncStatus === "connecting" ? "正在连接云端…" : "已保存在当前设备"}</div>
         </nav>
 
@@ -983,7 +983,7 @@ export default function Home() {
         </section>
 
         <footer>
-          <div className="footer-mark"><span>餐</span><strong>把目标落到每一餐。</strong></div>
+          <div className="footer-mark"><span className="brand-icon" aria-hidden="true" /><strong>把目标落到每一餐。</strong></div>
           <p>配额会根据当前目标、训练安排和身体数据计算。智能秤体脂与软件计算均仅作趋势参考。</p>
         </footer>
       </section>
