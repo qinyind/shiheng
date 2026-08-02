@@ -36,6 +36,12 @@ type MealPreset = {
   proteinShare: number;
 };
 type Food = Macro & { id: string; name: string; category: string; unit?: string };
+type AiEstimate = Macro & {
+  name: string;
+  grams: number;
+  confidence: "low" | "medium" | "high";
+  note: string;
+};
 type FoodEntry = {
   id: string;
   foodId: string;
@@ -276,10 +282,123 @@ function getRecommendation(target: Macro, total: Macro) {
   return { text: "本餐已经接近目标，搭配一份清淡蔬菜即可。", foodId: "broccoli", grams: 150 };
 }
 
-function MealCard({ meal, target, entries, onAdd, onRemove }: {
+function AiFoodAnalyzer({ onSave }: { onSave: (food: Food) => void }) {
+  const [description, setDescription] = useState("");
+  const [imageData, setImageData] = useState("");
+  const [imageName, setImageName] = useState("");
+  const [estimate, setEstimate] = useState<AiEstimate | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  function chooseImage(file?: File) {
+    setError("");
+    setSaved(false);
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("请选择照片或图片文件。");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setError("图片请控制在 8MB 以内。");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImageData(String(reader.result || ""));
+      setImageName(file.name);
+    };
+    reader.onerror = () => setError("图片读取失败，请重新选择。");
+    reader.readAsDataURL(file);
+  }
+
+  async function analyze() {
+    if (!description.trim() && !imageData) {
+      setError("请先写下食物和份量，或拍一张照片。");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    setSaved(false);
+    try {
+      const response = await fetch("/api/analyze-food", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ description: description.trim(), image: imageData || undefined }),
+      });
+      const data = await response.json() as { estimate?: AiEstimate; error?: string };
+      if (!response.ok || !data.estimate) throw new Error(data.error || "暂时无法完成识别，请稍后重试。");
+      setEstimate(data.estimate);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "暂时无法完成识别，请稍后重试。");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function updateEstimate<K extends keyof AiEstimate>(key: K, value: AiEstimate[K]) {
+    setEstimate((current) => current ? { ...current, [key]: value } : current);
+    setSaved(false);
+  }
+
+  function saveFood() {
+    if (!estimate || estimate.grams <= 0 || !estimate.name.trim()) return;
+    const scale = 100 / estimate.grams;
+    onSave({
+      id: `saved-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      name: estimate.name.trim(),
+      category: "我的食物",
+      carbs: round(Math.max(0, estimate.carbs) * scale, 2),
+      protein: round(Math.max(0, estimate.protein) * scale, 2),
+      fat: round(Math.max(0, estimate.fat) * scale, 2),
+      kcal: round(Math.max(0, estimate.kcal) * scale, 1),
+    });
+    setSaved(true);
+  }
+
+  const confidenceLabel = estimate?.confidence === "high" ? "较高" : estimate?.confidence === "medium" ? "中等" : "较低";
+
+  return (
+    <section className="ai-card" id="ai-food">
+      <div className="ai-copy">
+        <p className="eyebrow">03 · AI 智能识餐</p>
+        <h2>说出来，或拍下来</h2>
+        <p>描述食物、重量和烹饪方式，或拍摄餐盘 / 营养标签。AI 会估算整份营养；保存前可以手动校正。</p>
+        <div className="ai-tips"><span>写清生重 / 熟重</span><span>带上油与酱料</span><span>照片尽量俯拍</span></div>
+      </div>
+
+      <div className="ai-input-panel">
+        <label className="ai-text-label"><span>文字描述</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="例如：熟米饭 200g，煎鸡胸肉 150g，用了约 8g 油；或输入包装营养成分表" /></label>
+        <div className="photo-row">
+          <label className="photo-button"><input type="file" accept="image/*" capture="environment" onChange={(event) => chooseImage(event.target.files?.[0])} /><span>{imageData ? "更换照片" : "拍照 / 选图"}</span></label>
+          {imageData ? <div className="photo-preview"><img src={imageData} alt="待识别食物预览" /><span>{imageName}</span><button onClick={() => { setImageData(""); setImageName(""); }} aria-label="移除照片">×</button></div> : <p>支持餐盘、外卖、包装标签，最大 8MB</p>}
+        </div>
+        <button className="analyze-button" onClick={analyze} disabled={loading}>{loading ? "正在分析营养…" : "开始 AI 计算"}<span>✦</span></button>
+        {error && <p className="ai-error" role="alert">{error}</p>}
+      </div>
+
+      {estimate && (
+        <div className="ai-result">
+          <div className="ai-result-head"><div><span>AI 估算结果</span><strong>置信度{confidenceLabel}</strong></div><p>{estimate.note}</p></div>
+          <div className="estimate-grid">
+            <label className="estimate-name"><span>保存名称</span><input value={estimate.name} onChange={(event) => updateEstimate("name", event.target.value)} /></label>
+            <label><span>整份重量</span><div><input type="number" min="1" value={estimate.grams} onChange={(event) => updateEstimate("grams", Number(event.target.value))} /><b>g</b></div></label>
+            {(["carbs", "protein", "fat", "kcal"] as const).map((key) => (
+              <label key={key}><span>{key === "carbs" ? "整份碳水" : key === "protein" ? "整份蛋白质" : key === "fat" ? "整份脂肪" : "整份热量"}</span><div><input type="number" min="0" step="0.1" value={round(estimate[key], 1)} onChange={(event) => updateEstimate(key, Number(event.target.value))} /><b>{key === "kcal" ? "kcal" : "g"}</b></div></label>
+            ))}
+          </div>
+          <div className="save-result-row"><p>保存后会自动换算为每 100g 营养，并出现在所有餐次的“我的食物”中。</p><button onClick={saveFood} disabled={saved}>{saved ? "已保存到我的食物" : "保存为自定义食物"}</button></div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MealCard({ meal, target, entries, foods, onAdd, onRemove }: {
   meal: MealPreset;
   target: Macro;
   entries: FoodEntry[];
+  foods: Food[];
   onAdd: (entry: FoodEntry) => void;
   onRemove: (id: string) => void;
 }) {
@@ -297,7 +416,7 @@ function MealCard({ meal, target, entries, onAdd, onRemove }: {
 
   function addFood() {
     if (!grams || grams <= 0) return;
-    const food = FOODS.find((item) => item.id === foodId);
+    const food = foods.find((item) => item.id === foodId);
     const per100 = foodId === "custom"
       ? { carbs: custom.carbs, protein: custom.protein, fat: custom.fat, kcal: custom.kcal || custom.carbs * 4 + custom.protein * 4 + custom.fat * 9 }
       : food!;
@@ -343,9 +462,9 @@ function MealCard({ meal, target, entries, onAdd, onRemove }: {
 
       <div className="add-food">
         <select value={foodId} onChange={(e) => setFoodId(e.target.value)} aria-label="选择食物">
-          {[...new Set(FOODS.map((f) => f.category))].map((category) => (
+          {[...new Set(foods.map((f) => f.category))].map((category) => (
             <optgroup key={category} label={category}>
-              {FOODS.filter((f) => f.category === category).map((food) => <option key={food.id} value={food.id}>{food.name}</option>)}
+              {foods.filter((f) => f.category === category).map((food) => <option key={food.id} value={food.id}>{food.name}</option>)}
             </optgroup>
           ))}
           <option value="custom">＋ 自定义食物</option>
@@ -375,6 +494,7 @@ export default function Home() {
   const [date, setDate] = useState(todayString());
   const [logs, setLogs] = useState<Record<string, DayLog>>({});
   const [metas, setMetas] = useState<Record<string, DayMeta>>({});
+  const [customFoods, setCustomFoods] = useState<Food[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [ready, setReady] = useState(false);
 
@@ -386,6 +506,7 @@ export default function Home() {
         if (parsed.profile) setProfile(parsed.profile);
         if (parsed.logs) setLogs(parsed.logs);
         if (parsed.metas) setMetas(parsed.metas);
+        if (Array.isArray(parsed.customFoods)) setCustomFoods(parsed.customFoods);
       }
     } catch { /* device-local storage is optional */ }
     setReady(true);
@@ -393,8 +514,8 @@ export default function Home() {
 
   useEffect(() => {
     if (!ready) return;
-    localStorage.setItem("meal-meter-state-v1", JSON.stringify({ profile, logs, metas }));
-  }, [profile, logs, metas, ready]);
+    localStorage.setItem("meal-meter-state-v1", JSON.stringify({ profile, logs, metas, customFoods }));
+  }, [profile, logs, metas, customFoods, ready]);
 
   const calc = useMemo(() => calculate(profile), [profile]);
   const computedDayType: DayType = profile.timing === "none" ? "rest" : dayType;
@@ -411,6 +532,7 @@ export default function Home() {
   const consumed = sumMacros(dayEntries);
   const bmi = profile.weight / ((profile.height / 100) ** 2);
   const currentPlanLabel = PLAN_OPTIONS.find((p) => p.goal === profile.goal && p.timing === profile.timing)?.label || "自定义方案";
+  const availableFoods = useMemo(() => [...FOODS, ...customFoods], [customFoods]);
 
   const historyRows = useMemo(() => Object.keys(logs)
     .filter((recordDate) => Object.values(logs[recordDate] || {}).some((items) => items.length > 0))
@@ -463,6 +585,10 @@ export default function Home() {
     });
   }
 
+  function saveCustomFood(food: Food) {
+    setCustomFoods((current) => [...current.filter((item) => !(item.name === food.name && item.category === "我的食物")), food]);
+  }
+
   function chooseDayType(next: DayType) {
     setDayType(next);
     const nextTarget: Macro = next === "training"
@@ -495,7 +621,7 @@ export default function Home() {
         <div className="hero-copy" id="top">
           <p className="kicker">把 Excel 方案变成每一口的判断</p>
           <h1>今天这顿，<em>吃对了吗？</em></h1>
-          <p>选择训练方案，系统自动拆分每日与每餐指标。记录食物后，立即看到余量、超标项和下一口建议。</p>
+          <p>选择训练方案，系统自动拆分每日与每餐指标。记录食物或让 AI 看图识餐，立即看到余量、超标项和下一口建议。</p>
         </div>
 
         <div className="profile-panel" id="settings">
@@ -552,8 +678,10 @@ export default function Home() {
           </div>
         </section>
 
+        <AiFoodAnalyzer onSave={saveCustomFood} />
+
         <div className="section-heading">
-          <div><p className="eyebrow">03 · 逐餐记录</p><h2>每一餐都有清楚的边界</h2></div>
+          <div><p className="eyebrow">04 · 逐餐记录</p><h2>每一餐都有清楚的边界</h2></div>
           <p>选择食物并输入可食重量，系统按完整营养数据计算。包装食品请优先使用“自定义食物”填写标签数值。</p>
         </div>
 
@@ -565,13 +693,13 @@ export default function Home() {
               fat: dailyTarget.fat * meal.proteinShare,
               kcal: dailyTarget.kcal * ((meal.carbShare + meal.proteinShare) / 2),
             };
-            return <MealCard key={meal.id} meal={meal} target={target} entries={dateLog[meal.id] || []} onAdd={(entry) => addEntry(meal.id, entry)} onRemove={(id) => removeEntry(meal.id, id)} />;
+            return <MealCard key={meal.id} meal={meal} target={target} entries={dateLog[meal.id] || []} foods={availableFoods} onAdd={(entry) => addEntry(meal.id, entry)} onRemove={(id) => removeEntry(meal.id, id)} />;
           })}
         </section>
 
         <section className="history-section" id="history">
           <div className="section-heading history-heading">
-            <div><p className="eyebrow">04 · 历史记录</p><h2>每天的变化，都留得住</h2></div>
+            <div><p className="eyebrow">05 · 历史记录</p><h2>每天的变化，都留得住</h2></div>
             <p>记录按日期保存在当前设备；每一天会锁定当时的方案、体重和目标，之后调整参数不会改写旧记录。</p>
           </div>
           {historyRows.length ? (
@@ -598,6 +726,7 @@ export default function Home() {
       </section>
       <nav className="mobile-nav" aria-label="移动端导航">
         <button onClick={() => scrollTo("today")}><span>●</span>今日</button>
+        <button onClick={() => scrollTo("ai-food")}><span>✦</span>识餐</button>
         <button onClick={() => scrollTo("history")}><span>◷</span>历史</button>
         <button onClick={() => { setSettingsOpen(true); scrollTo("settings"); }}><span>⌁</span>设置</button>
       </nav>
