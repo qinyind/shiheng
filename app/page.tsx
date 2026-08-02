@@ -687,15 +687,18 @@ function MealCard({ meal, target, entries, foods, goal, dayType, onAdd, onRemove
       <button className="recommendation" onClick={applyRecommendation}>
         <span className="spark">✦</span><span><b>本餐推荐</b>{recommendation.text}</span><span className="arrow">↗</span>
       </button>
-      <div className="meal-excel-guide">
-        <div className="meal-guide-title"><span>本餐建议</span><p>{excelGuide.summary}</p></div>
-        <div className="meal-guide-chips">{excelGuide.choices.slice(0, 3).map((choice) => <span key={choice}>{choice}</span>)}</div>
-        <div className="meal-guide-alert" role="note" aria-label={`${meal.name}重点提醒`}>
-          <strong><span aria-hidden="true">!</span> 重点提醒</strong>
-          <ul>{excelGuide.cautions.map((caution) => <li key={caution}>{caution}</li>)}</ul>
+      <details className="meal-excel-guide">
+        <summary className="meal-guide-toggle"><span>本餐建议</span><span className="meal-guide-toggle-hint">展开查看</span></summary>
+        <div className="meal-guide-body">
+          <div className="meal-guide-title"><p>{excelGuide.summary}</p></div>
+          <div className="meal-guide-chips">{excelGuide.choices.slice(0, 3).map((choice) => <span key={choice}>{choice}</span>)}</div>
+          <div className="meal-guide-alert" role="note" aria-label={`${meal.name}重点提醒`}>
+            <strong><span aria-hidden="true">!</span> 重点提醒</strong>
+            <ul>{excelGuide.cautions.map((caution) => <li key={caution}>{caution}</li>)}</ul>
+          </div>
+          {excelGuide.choices.length > 3 && <details><summary>查看更多可选食物</summary><ul>{excelGuide.choices.slice(3).map((choice) => <li key={choice}>{choice}</li>)}</ul></details>}
         </div>
-        {excelGuide.choices.length > 3 && <details><summary>查看更多可选食物</summary><ul>{excelGuide.choices.slice(3).map((choice) => <li key={choice}>{choice}</li>)}</ul></details>}
-      </div>
+      </details>
     </article>
   );
 }
