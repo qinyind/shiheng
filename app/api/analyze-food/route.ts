@@ -7,6 +7,11 @@ type OpenAIResponse = {
   error?: { message?: string };
 };
 
+type PersonalServerResponse = {
+  estimate?: ReturnType<typeof normalizeEstimate>;
+  error?: string;
+};
+
 const schema = {
   type: "object",
   additionalProperties: false,
@@ -67,10 +72,6 @@ function extractText(response: OpenAIResponse) {
 export async function POST(request: NextRequest) {
   const user = await getChatGPTUser();
   if (!user) return NextResponse.json({ error: "需要登录后才能使用 AI 识餐。" }, { status: 401 });
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: "AI 服务尚未配置。需要先在站点中添加 OpenAI API 密钥。" }, { status: 503 });
-  }
 
   try {
     const body = await request.json() as { description?: string; image?: string };
@@ -80,6 +81,31 @@ export async function POST(request: NextRequest) {
     if (description.length > 3000) return NextResponse.json({ error: "文字描述请控制在 3000 字以内。" }, { status: 400 });
     if (image && (!image.startsWith("data:image/") || image.length > 12_000_000)) {
       return NextResponse.json({ error: "图片格式无效或文件过大。" }, { status: 400 });
+    }
+
+    const personalServerURL = process.env.AI_UPSTREAM_URL?.trim();
+    const personalServerToken = process.env.AI_UPSTREAM_TOKEN?.trim();
+    if (personalServerURL && personalServerToken) {
+      const upstreamURL = new URL("/v1/ai/analyze-food", personalServerURL);
+      if (upstreamURL.protocol !== "https:") {
+        return NextResponse.json({ error: "AI 服务地址配置不安全。" }, { status: 503 });
+      }
+      const upstream = await fetch(upstreamURL, {
+        method: "POST",
+        headers: { authorization: `Bearer ${personalServerToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ description, imageDataURL: image || undefined }),
+        signal: AbortSignal.timeout(95_000),
+      });
+      const response = await upstream.json() as PersonalServerResponse;
+      if (!upstream.ok || !response.estimate) {
+        return NextResponse.json({ error: response.error || "AI 服务暂时不可用，请稍后重试。" }, { status: upstream.status >= 500 ? 502 : upstream.status });
+      }
+      return NextResponse.json({ estimate: response.estimate });
+    }
+
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json({ error: "AI 服务尚未配置。" }, { status: 503 });
     }
 
     const content: Array<Record<string, unknown>> = [{

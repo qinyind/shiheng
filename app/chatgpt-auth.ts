@@ -20,9 +20,12 @@ const CALLBACK_PATH = "/callback";
 
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   const requestHeaders = await headers();
-  const userId = requestHeaders.get(USER_ID_HEADER);
   const email = requestHeaders.get(USER_EMAIL_HEADER);
-  if (!userId || !email) return null;
+  if (!email) return null;
+  // Sites always supplies the authenticated email, while some external/private
+  // sessions do not include an account user id. The email header is injected by
+  // the trusted Sites dispatcher, so it is a stable per-user fallback key.
+  const userId = requestHeaders.get(USER_ID_HEADER) || `email:${email.trim().toLowerCase()}`;
 
   const encodedFullName = requestHeaders.get(USER_FULL_NAME_HEADER);
   const fullName =
