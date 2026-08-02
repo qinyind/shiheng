@@ -279,7 +279,10 @@ final class MealStore: ObservableObject {
         if !serverURL.isEmpty && ServerClient.shared.isPaired { syncState = .synced }
     }
 
-    var foods: [Food] { Self.builtInFoods + customFoods }
+    var foods: [Food] {
+        let customNames = Set(customFoods.map { foodNameKey($0.name) })
+        return customFoods + Self.builtInFoods.filter { !customNames.contains(foodNameKey($0.name)) }
+    }
     var dateKey: String { Self.key(for: selectedDate) }
     var effectiveDayType: DayType {
         if profile.timing == .none { return .rest }
@@ -395,10 +398,12 @@ final class MealStore: ObservableObject {
 
     func add(estimate: NutritionEstimate, mealID: String, saveNewIngredients: Bool) {
         for ingredient in estimate.ingredients {
-            let matched = matchingFood(for: ingredient)
-            let entryFood = Food(id: "ai-\(UUID().uuidString)", name: matched?.name ?? ingredient.name,
+            let entryFood = Food(id: "ai-\(UUID().uuidString)", name: ingredient.name,
                                  category: "AI 基础食材", per100: ingredient.per100)
-            if saveNewIngredients && matched == nil {
+            if saveNewIngredients {
+                let replaced = customFoods.filter { foodNameKey($0.name) == foodNameKey(ingredient.name) }
+                deletedFoodIDs.formUnion(replaced.map(\.id))
+                customFoods.removeAll { foodNameKey($0.name) == foodNameKey(ingredient.name) }
                 customFoods.append(Food(id: "custom-\(UUID().uuidString)", name: ingredient.name,
                                         category: "我的食材", per100: ingredient.per100))
             }
@@ -903,6 +908,31 @@ private struct AddFoodView: View {
 }
 
 private struct AIAnalyzeView: View {
+    private struct EditableIngredient: Identifiable {
+        let id = UUID()
+        var name: String
+        var grams: Double
+        var carbs: Double
+        var protein: Double
+        var fat: Double
+        var kcal: Double
+
+        init(_ ingredient: NutritionIngredient) {
+            name = ingredient.name
+            grams = ingredient.grams
+            carbs = ingredient.carbs
+            protein = ingredient.protein
+            fat = ingredient.fat
+            kcal = ingredient.kcal
+        }
+
+        var nutritionIngredient: NutritionIngredient {
+            NutritionIngredient(name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                                grams: max(grams, 0.1), carbs: max(carbs, 0),
+                                protein: max(protein, 0), fat: max(fat, 0), kcal: max(kcal, 0))
+        }
+    }
+
     @ObservedObject var store: MealStore
     let meal: MealPreset
     @Environment(\.dismiss) private var dismiss
@@ -910,9 +940,19 @@ private struct AIAnalyzeView: View {
     @State private var image: UIImage?
     @State private var showPicker = false
     @State private var estimate: NutritionEstimate?
+    @State private var draftIngredients: [EditableIngredient] = []
     @State private var isLoading = false
     @State private var errorMessage = ""
-    @State private var saveNewIngredients = true
+    @State private var saveNewIngredients = false
+
+    private var correctedEstimate: NutritionEstimate? {
+        guard let estimate, !draftIngredients.isEmpty else { return nil }
+        let ingredients = draftIngredients.map(\.nutritionIngredient)
+        let sum = ingredients.reduce(Macro()) { $0 + $1.totalMacro }
+        return NutritionEstimate(name: estimate.name, grams: ingredients.reduce(0) { $0 + $1.grams },
+                                 carbs: sum.carbs, protein: sum.protein, fat: sum.fat, kcal: sum.kcal,
+                                 confidence: estimate.confidence, note: estimate.note, ingredients: ingredients)
+    }
 
     var body: some View {
         NavigationView {
@@ -926,39 +966,42 @@ private struct AIAnalyzeView: View {
                     }
                     if let image { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 180).clipShape(RoundedRectangle(cornerRadius: 12)) }
                 }
-                if let estimate {
-                    Section("AI 拆分 · \(estimate.ingredients.count) 种基础食材") {
-                        ForEach(estimate.ingredients) { ingredient in
-                            VStack(alignment: .leading, spacing: 7) {
-                                HStack {
-                                    Text(ingredient.name).font(.body.weight(.semibold))
-                                    Spacer()
-                                    Text("\(ingredient.grams, specifier: "%.1f")g").foregroundColor(.secondary)
-                                }
-                                Text("碳水 \(ingredient.carbs, specifier: "%.1f")g · 蛋白质 \(ingredient.protein, specifier: "%.1f")g · 脂肪 \(ingredient.fat, specifier: "%.1f")g · \(Int(ingredient.kcal.rounded())) kcal")
-                                    .font(.caption).foregroundColor(.secondary)
-                                if let matched = store.matchingFood(for: ingredient) {
-                                    Label("已匹配：\(matched.name)", systemImage: "checkmark.circle.fill")
-                                        .font(.caption2).foregroundColor(brandGreen)
-                                } else {
-                                    Label("未收录，可保存到食材库", systemImage: "plus.circle")
-                                        .font(.caption2).foregroundColor(.orange)
-                                }
-                            }.padding(.vertical, 3)
+                if let estimate, let correctedEstimate {
+                    Section {
+                        Text("可逐项修改；调整重量会按比例换算营养，修改三大营养素会自动重算热量。")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                    ForEach(draftIngredients.indices, id: \.self) { index in
+                        Section("基础食材 \(index + 1)") {
+                            TextField("食材名称", text: $draftIngredients[index].name)
+                            editableNumberRow("重量", value: gramsBinding(at: index), unit: "g")
+                            editableNumberRow("碳水", value: macroBinding(at: index, keyPath: \.carbs), unit: "g")
+                            editableNumberRow("蛋白质", value: macroBinding(at: index, keyPath: \.protein), unit: "g")
+                            editableNumberRow("脂肪", value: macroBinding(at: index, keyPath: \.fat), unit: "g")
+                            editableNumberRow("热量", value: directBinding(at: index, keyPath: \.kcal), unit: "kcal")
+                            if let matched = store.matchingFood(for: draftIngredients[index].nutritionIngredient) {
+                                Label("已匹配：\(matched.name)；可保存更正值", systemImage: "checkmark.circle.fill")
+                                    .font(.caption2).foregroundColor(brandGreen)
+                            } else {
+                                Label("未收录，可保存到食材库", systemImage: "plus.circle")
+                                    .font(.caption2).foregroundColor(.orange)
+                            }
                         }
                     }
                     Section("按食材明细合计") {
-                        HStack { Text(estimate.name).font(.headline); Spacer(); Text("约 \(Int(estimate.grams.rounded()))g") }
-                        HStack { Text("碳水"); Spacer(); Text("\(estimate.carbs, specifier: "%.1f")g") }
-                        HStack { Text("蛋白质"); Spacer(); Text("\(estimate.protein, specifier: "%.1f")g") }
-                        HStack { Text("脂肪"); Spacer(); Text("\(estimate.fat, specifier: "%.1f")g") }
-                        HStack { Text("热量"); Spacer(); Text("\(Int(estimate.kcal.rounded())) kcal") }
+                        HStack { Text(estimate.name).font(.headline); Spacer(); Text("约 \(Int(correctedEstimate.grams.rounded()))g") }
+                        HStack { Text("碳水"); Spacer(); Text("\(correctedEstimate.carbs, specifier: "%.1f")g") }
+                        HStack { Text("蛋白质"); Spacer(); Text("\(correctedEstimate.protein, specifier: "%.1f")g") }
+                        HStack { Text("脂肪"); Spacer(); Text("\(correctedEstimate.fat, specifier: "%.1f")g") }
+                        HStack { Text("热量"); Spacer(); Text("\(Int(correctedEstimate.kcal.rounded())) kcal") }
                         Text(estimate.note).font(.caption).foregroundColor(.secondary)
-                        Toggle("保存未收录的基础食材", isOn: $saveNewIngredients)
-                        Button("按 \(estimate.ingredients.count) 种食材记入\(meal.name)") {
-                            store.add(estimate: estimate, mealID: meal.id, saveNewIngredients: saveNewIngredients)
+                        Toggle("同时保存或覆盖到我的食材", isOn: $saveNewIngredients)
+                        Button("按调整后的 \(correctedEstimate.ingredients.count) 种食材记入\(meal.name)") {
+                            store.add(estimate: correctedEstimate, mealID: meal.id, saveNewIngredients: saveNewIngredients)
                             dismiss()
-                        }.font(.body.weight(.semibold))
+                        }
+                        .font(.body.weight(.semibold))
+                        .disabled(correctedEstimate.ingredients.contains { $0.name.isEmpty || $0.grams <= 0 })
                     }
                 }
                 if !errorMessage.isEmpty { Section { Text(errorMessage).foregroundColor(.red).font(.footnote) } }
@@ -983,8 +1026,49 @@ private struct AIAnalyzeView: View {
         isLoading = true
         errorMessage = ""
         defer { isLoading = false }
-        do { estimate = try await store.analyzeFood(description: description, image: image) }
+        do {
+            let result = try await store.analyzeFood(description: description, image: image)
+            estimate = result
+            draftIngredients = result.ingredients.map(EditableIngredient.init)
+        }
         catch { errorMessage = error.localizedDescription }
+    }
+
+    private func editableNumberRow(_ label: String, value: Binding<Double>, unit: String) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            TextField("0", value: value, format: .number)
+                .keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+            Text(unit).foregroundColor(.secondary)
+        }
+    }
+
+    private func gramsBinding(at index: Int) -> Binding<Double> {
+        Binding(get: { draftIngredients[index].grams }, set: { newValue in
+            let safeValue = max(0, newValue)
+            let oldValue = draftIngredients[index].grams
+            let ratio = oldValue > 0 ? safeValue / oldValue : 1
+            draftIngredients[index].grams = safeValue
+            draftIngredients[index].carbs *= ratio
+            draftIngredients[index].protein *= ratio
+            draftIngredients[index].fat *= ratio
+            draftIngredients[index].kcal *= ratio
+        })
+    }
+
+    private func macroBinding(at index: Int, keyPath: WritableKeyPath<EditableIngredient, Double>) -> Binding<Double> {
+        Binding(get: { draftIngredients[index][keyPath: keyPath] }, set: { newValue in
+            draftIngredients[index][keyPath: keyPath] = max(0, newValue)
+            let item = draftIngredients[index]
+            draftIngredients[index].kcal = item.carbs * 4 + item.protein * 4 + item.fat * 9
+        })
+    }
+
+    private func directBinding(at index: Int, keyPath: WritableKeyPath<EditableIngredient, Double>) -> Binding<Double> {
+        Binding(get: { draftIngredients[index][keyPath: keyPath] }, set: { newValue in
+            draftIngredients[index][keyPath: keyPath] = max(0, newValue)
+        })
     }
 }
 
