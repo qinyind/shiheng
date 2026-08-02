@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getChatGPTUser } from "../../chatgpt-auth";
 
 type OpenAIResponse = {
   output_text?: string;
@@ -33,6 +34,8 @@ function extractText(response: OpenAIResponse) {
 }
 
 export async function POST(request: NextRequest) {
+  const user = await getChatGPTUser();
+  if (!user) return NextResponse.json({ error: "需要登录后才能使用 AI 识餐。" }, { status: 401 });
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "AI 服务尚未配置。需要先在站点中添加 OpenAI API 密钥。" }, { status: 503 });

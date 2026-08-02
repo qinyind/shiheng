@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Sex = "male" | "female";
 type Goal = "cut" | "gain";
@@ -57,6 +57,7 @@ type DayMeta = {
   weight: number;
   meals: MealPreset[];
 };
+type SyncStatus = "connecting" | "saving" | "synced" | "local";
 
 const FOODS: Food[] = [
   { id: "rice", name: "熟米饭", category: "主食", carbs: 30, protein: 2.6, fat: 0.3, kcal: 133 },
@@ -497,6 +498,10 @@ export default function Home() {
   const [customFoods, setCustomFoods] = useState<Food[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [ready, setReady] = useState(false);
+  const [cloudReady, setCloudReady] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("connecting");
+  const [showIosTip, setShowIosTip] = useState(false);
+  const lastModifiedRef = useRef(0);
 
   useEffect(() => {
     try {
@@ -507,15 +512,73 @@ export default function Home() {
         if (parsed.logs) setLogs(parsed.logs);
         if (parsed.metas) setMetas(parsed.metas);
         if (Array.isArray(parsed.customFoods)) setCustomFoods(parsed.customFoods);
+        lastModifiedRef.current = Number(parsed.updatedAt) || 0;
       }
     } catch { /* device-local storage is optional */ }
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
+    const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    if (isIos && !navigatorWithStandalone.standalone && localStorage.getItem("meal-meter-ios-tip") !== "dismissed") setShowIosTip(true);
     setReady(true);
   }, []);
 
   useEffect(() => {
     if (!ready) return;
-    localStorage.setItem("meal-meter-state-v1", JSON.stringify({ profile, logs, metas, customFoods }));
+    localStorage.setItem("meal-meter-state-v1", JSON.stringify({ profile, logs, metas, customFoods, updatedAt: lastModifiedRef.current }));
   }, [profile, logs, metas, customFoods, ready]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const controller = new AbortController();
+    async function loadCloudState() {
+      setSyncStatus("connecting");
+      try {
+        const response = await fetch("/api/sync", { signal: controller.signal, cache: "no-store" });
+        if (response.status === 401) {
+          setSyncStatus("local");
+          return;
+        }
+        if (!response.ok) throw new Error("sync unavailable");
+        const data = await response.json() as { state?: { profile?: Profile; logs?: Record<string, DayLog>; metas?: Record<string, DayMeta>; customFoods?: Food[] } | null; updatedAt?: string | null };
+        const serverTime = data.updatedAt ? Date.parse(data.updatedAt) : 0;
+        if (data.state && serverTime > lastModifiedRef.current) {
+          if (data.state.profile) setProfile(data.state.profile);
+          if (data.state.logs) setLogs(data.state.logs);
+          if (data.state.metas) setMetas(data.state.metas);
+          if (Array.isArray(data.state.customFoods)) setCustomFoods(data.state.customFoods);
+          lastModifiedRef.current = serverTime;
+        }
+        setCloudReady(true);
+        setSyncStatus("synced");
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) setSyncStatus("local");
+      }
+    }
+    loadCloudState();
+    return () => controller.abort();
+  }, [ready]);
+
+  useEffect(() => {
+    if (!ready || !cloudReady) return;
+    setSyncStatus("saving");
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch("/api/sync", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ state: { profile, logs, metas, customFoods } }),
+        });
+        if (!response.ok) throw new Error("sync failed");
+        const data = await response.json() as { updatedAt?: string };
+        if (data.updatedAt) lastModifiedRef.current = Date.parse(data.updatedAt);
+        localStorage.setItem("meal-meter-state-v1", JSON.stringify({ profile, logs, metas, customFoods, updatedAt: lastModifiedRef.current }));
+        setSyncStatus("synced");
+      } catch {
+        setSyncStatus("local");
+      }
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [profile, logs, metas, customFoods, ready, cloudReady]);
 
   const calc = useMemo(() => calculate(profile), [profile]);
   const computedDayType: DayType = profile.timing === "none" ? "rest" : dayType;
@@ -550,16 +613,19 @@ export default function Home() {
     }), [logs, metas]);
 
   function updateProfile<K extends keyof Profile>(key: K, value: Profile[K]) {
+    markChanged();
     setProfile((current) => ({ ...current, [key]: value }));
   }
 
   function changePlan(value: string) {
+    markChanged();
     const [goal, timing] = value.split(":") as [Goal, Timing];
     setProfile((current) => ({ ...current, goal, timing }));
     if (timing === "none") setDayType("rest");
   }
 
   function addEntry(mealId: string, entry: FoodEntry) {
+    markChanged();
     if (!metas[date]) {
       setMetas((current) => ({ ...current, [date]: { dayType: computedDayType, target: computedTarget, planLabel: currentPlanLabel, weight: profile.weight, meals: computedMeals } }));
     }
@@ -570,6 +636,7 @@ export default function Home() {
   }
 
   function removeEntry(mealId: string, id: string) {
+    markChanged();
     setLogs((current) => ({
       ...current,
       [date]: { ...current[date], [mealId]: (current[date]?.[mealId] || []).filter((entry) => entry.id !== id) },
@@ -577,6 +644,7 @@ export default function Home() {
   }
 
   function clearDay() {
+    markChanged();
     setLogs((current) => ({ ...current, [date]: {} }));
     setMetas((current) => {
       const next = { ...current };
@@ -586,10 +654,12 @@ export default function Home() {
   }
 
   function saveCustomFood(food: Food) {
+    markChanged();
     setCustomFoods((current) => [...current.filter((item) => !(item.name === food.name && item.category === "我的食物")), food]);
   }
 
   function chooseDayType(next: DayType) {
+    markChanged();
     setDayType(next);
     const nextTarget: Macro = next === "training"
       ? { carbs: calc.trainingCarbs, protein: calc.protein, fat: calc.fat, kcal: calc.trainingKcal }
@@ -607,6 +677,16 @@ export default function Home() {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
   }
 
+  function markChanged() {
+    lastModifiedRef.current = Date.now();
+    if (cloudReady) setSyncStatus("saving");
+  }
+
+  function dismissIosTip() {
+    localStorage.setItem("meal-meter-ios-tip", "dismissed");
+    setShowIosTip(false);
+  }
+
   const planValue = `${profile.goal}:${profile.timing}`;
   const completion = dailyTarget.kcal ? Math.min(100, Math.round((consumed.kcal / dailyTarget.kcal) * 100)) : 0;
 
@@ -615,7 +695,7 @@ export default function Home() {
       <section className="hero">
         <nav className="topbar">
           <a className="brand" href="#top" aria-label="餐标首页"><span>餐</span>餐标</a>
-          <div className="top-note"><i /> 数据只保存在你的设备</div>
+          <div className="top-note"><i />{syncStatus === "synced" ? "云端已同步" : syncStatus === "saving" ? "正在同步…" : syncStatus === "connecting" ? "正在连接云端…" : "已保存在当前设备"}</div>
         </nav>
 
         <div className="hero-copy" id="top">
@@ -648,6 +728,7 @@ export default function Home() {
       </section>
 
       <section className="dashboard-shell" id="today">
+        {showIosTip && <aside className="ios-install-tip"><span>iPhone 安装</span><p>在 Safari 点“分享”，再选“添加到主屏幕”，即可像 App 一样全屏使用。</p><button onClick={dismissIosTip} aria-label="关闭安装提示">×</button></aside>}
         <div className="day-toolbar">
           <div className="date-control"><button onClick={() => setDate(shiftDate(date, -1))} aria-label="前一天">←</button><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /><button onClick={() => setDate(shiftDate(date, 1))} aria-label="后一天">→</button></div>
           <div className="day-switch" aria-label="训练日类型">
