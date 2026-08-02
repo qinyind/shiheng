@@ -197,14 +197,14 @@ function guideForMeal(meal: MealPreset, goal: Goal, dayType: DayType): MealGuide
     cautions: ["水果只能占一部分碳水，不能替代主要淀粉主食", "意面、燕麦麸皮等低GI或高纤主食不作为练后主要碳水", "蔬菜少吃、后吃；与一般正餐的进食顺序相反"],
   };
   if (role === "snack") return {
-    summary: "原表的10%碳水用于抵扣牛奶、蔬菜和调料的漏算，不是让你再吃一份主食。",
+    summary: "预留的10%碳水用于抵扣牛奶、蔬菜和调料的漏算，不是让你再吃一份主食。",
     choices: ["低糖牛肉干 / 鸡肉干", "鸡蛋、乳制品", "蔬菜、无糖饮料"],
     cautions: ["不专门吃面包、米面、奶茶或水果", "不吃饼干、膨化食品、甜品糕点等糖油混合物", "不吃也可以，把少量额度分到其他正餐"],
   };
   if (role === "breakfast") return {
     summary: "早餐同时建立碳水、蛋白质和基础脂肪来源。",
     choices: ["主食任选：米饭/粥、馒头、切片面包、燕麦、薯类", "蛋白质优先：鸡蛋 + 纯牛奶；或鸡蛋", "鸡蛋可水煮、茶叶蛋、蒸蛋羹"],
-    cautions: ["不要把煎蛋当作原表中的鸡蛋选择", goal === "gain" ? "增肌表还安排每天约30g坚果作为脂肪来源" : "减脂表用蛋黄牛奶和正餐带油瘦肉覆盖脂肪，不建议逐克追脂肪", "如果完全不吃蛋黄和牛奶，需要按脂肪缺乏规则补充"],
+    cautions: ["鸡蛋优先选择水煮蛋，不用煎蛋替代", goal === "gain" ? "增肌方案还安排每天约30g坚果作为脂肪来源" : "减脂方案用蛋黄牛奶和正餐带油瘦肉覆盖脂肪，不建议逐克追脂肪", "如果完全不吃蛋黄和牛奶，需要按脂肪不足规则补充"],
   };
   return {
     summary: dayType === "rest" ? "休息日正餐：主食配瘦肉，蔬菜先吃、多吃。" : "其他正餐：主食配瘦肉，蔬菜先吃、多吃。",
@@ -312,7 +312,7 @@ function getRecommendation(target: Macro, total: Macro, meal: MealPreset) {
   if (role === "snack") {
     if (remain.protein > 10) {
       const food = FOODS.find((f) => f.id === "jerky")!;
-      return { text: `按原表不再补主食；若确实饿，可用约 ${round((remain.protein / food.protein) * 100)}g 低糖瘦肉干补蛋白质。`, foodId: food.id, grams: round((remain.protein / food.protein) * 100) };
+      return { text: `本次加餐不再补主食；若确实饿，可用约 ${round((remain.protein / food.protein) * 100)}g 低糖瘦肉干补蛋白质。`, foodId: food.id, grams: round((remain.protein / food.protein) * 100) };
     }
     return { text: "这餐的碳水是漏算预留，不必吃满；可选鸡蛋、乳制品、蔬菜或无糖饮料。", foodId: "egg", grams: 50 };
   }
@@ -336,31 +336,31 @@ function getRecommendation(target: Macro, total: Macro, meal: MealPreset) {
     const amount = round((remain.carbs / food.carbs) * 100);
     return { text: role === "post" ? `练后还差约 ${round(remain.carbs)}g 碳水，可补 ${amount}g 一般熟米饭；水果不能作为主要来源。` : `还差约 ${round(remain.carbs)}g 碳水，可选约 ${amount}g ${food.name}。`, foodId: food.id, grams: amount };
   }
-  return { text: role === "post" ? "练后餐已接近目标；如吃蔬菜，请少吃、后吃。" : "本餐已经接近目标，按原表先吃、多吃蔬菜即可。", foodId: "broccoli", grams: 150 };
+  return { text: role === "post" ? "练后餐已接近目标；如吃蔬菜，请少吃、后吃。" : "本餐已经接近目标，先吃、多吃蔬菜即可。", foodId: "broccoli", grams: 150 };
 }
 
 function PlanGuidance({ profile, dayType, bmi, planLabel }: { profile: Profile; dayType: DayType; bmi: number; planLabel: string }) {
   const isCut = profile.goal === "cut";
   const cardio = !isCut
-    ? "原表一般建议增肌期不做有氧，把恢复能力留给稳定力训。"
+    ? "增肌期一般不安排有氧，把恢复能力留给稳定力训。"
     : profile.weight > 80
-      ? "原表建议80kg以上减脂者先不做有氧，优先用饮食建立缺口。"
+      ? "80kg以上减脂者先不做有氧，优先用饮食建立缺口。"
       : profile.weight >= 70
-        ? `你目前${profile.weight}kg：原表建议70–80kg先不做有氧；感觉饥饿时再加有氧，并等量增加饮食。`
-        : "原表建议70kg以下减脂者每周约2小时有氧；长有氧与力训隔开。";
+        ? `你目前${profile.weight}kg：70–80kg先不做有氧；感觉饥饿时再加有氧，并等量增加饮食。`
+        : "70kg以下减脂者每周约2小时有氧；长有氧与力训隔开。";
   const trend = isCut
     ? "用1–2周体重趋势判断，理论参考为2周约下降2%；两三天变化多是水分和食糜，不用据此改配额。"
     : `按月看增重：${profile.sex === "male" ? "男性一般不超过1kg/月" : "女性一般不超过0.5kg/月"}，一个月完全不长再增加饮食。`;
   const switchPoint = isCut
-    ? `普通人不追求极低体脂；原表建议${profile.sex === "male" ? "男性BMI 22–23" : "女性BMI 20–21"}附近转增肌。你目前BMI ${round(bmi, 1)}。`
-    : `若介意发胖，原表建议${profile.sex === "male" ? "男性BMI 23–24" : "女性BMI 21–22"}附近转减脂。你目前BMI ${round(bmi, 1)}。`;
+    ? `普通人不追求极低体脂；建议${profile.sex === "male" ? "男性BMI 22–23" : "女性BMI 20–21"}附近转增肌。你目前BMI ${round(bmi, 1)}。`
+    : `若介意发胖，建议${profile.sex === "male" ? "男性BMI 23–24" : "女性BMI 21–22"}附近转减脂。你目前BMI ${round(bmi, 1)}。`;
   const fatRule = isCut
     ? "男性约60g、女性约50g；不必逐克细算。早餐蛋黄牛奶 + 正餐带油瘦肉通常即可；缺少这些来源时，可补30g坚果、3个全蛋或1盒全脂牛奶。"
-    : "男性约80g、女性约70g；早餐蛋黄牛奶 + 正餐带油瘦肉 + 每天约30g坚果。若蛋奶和菜油都不足，按原表脂肪缺乏规则补充。";
+    : "男性约80g、女性约70g；早餐蛋黄牛奶 + 正餐带油瘦肉 + 每天约30g坚果。若蛋奶和菜油都不足，按脂肪不足规则补充。";
 
   return (
     <section className="plan-guidance" id="guidance">
-      <div className="guide-heading"><div><p className="eyebrow">03 · Excel 原表指导</p><h2>不只算数字，也告诉你怎么吃</h2></div><span>{planLabel} · {dayType === "training" ? "力训日" : "休息日"}</span></div>
+      <div className="guide-heading"><div><p className="eyebrow">03 · 方案指导</p><h2>不只算数字，也告诉你怎么吃</h2></div><span>{planLabel} · {dayType === "training" ? "力训日" : "休息日"}</span></div>
       <div className="guide-highlight"><strong>{profile.timing === "beforeDinner" && dayType === "training" ? "晚饭是全天最大练后餐" : dayType === "rest" ? "不力训就是休息日，与是否做有氧无关" : "训练日按练前、练后位置分配餐次"}</strong><p>{profile.timing === "beforeDinner" && dayType === "training" ? "餐序：早饭 → 午饭（其他餐）→ 练前餐 → 晚饭（练后餐）→ 少量零食/夜宵预留。" : "具体食物选择和进食顺序已写入下方每一餐。"}</p></div>
       <div className="guide-grid">
         <article><span>体重趋势</span><p>{trend}</p></article>
@@ -369,7 +369,7 @@ function PlanGuidance({ profile, dayType, bmi, planLabel }: { profile: Profile; 
         <article><span>脂肪怎么吃</span><p>{fatRule}</p></article>
       </div>
       <details className="food-boundaries">
-        <summary>查看原表的食物分类、置换与禁忌</summary>
+        <summary>查看食物分类、置换与禁忌</summary>
         <div>
           <section><h3>碳水主食</h3><p>米饭一般按30%碳水率；馒头/花卷/切片面包50%；蒸煮红薯和土豆18%；速食燕麦60%。练后优先米饭、馒头、熟面等高GI主食。</p></section>
           <section><h3>蛋白质</h3><p>一般熟瘦肉按25%蛋白质率；柴感熟肉30%；低糖瘦肉干40%；蛋白粉约75%。瘦肉只包括去皮禽肉、无白色脂肪层的猪牛羊、鱼虾贝和部分内脏。</p></section>
@@ -587,7 +587,7 @@ function MealCard({ meal, target, entries, foods, goal, dayType, onAdd, onRemove
         <span className="spark">✦</span><span><b>本餐推荐</b>{recommendation.text}</span><span className="arrow">↗</span>
       </button>
       <div className="meal-excel-guide">
-        <div className="meal-guide-title"><span>Excel 原表建议</span><p>{excelGuide.summary}</p></div>
+        <div className="meal-guide-title"><span>本餐建议</span><p>{excelGuide.summary}</p></div>
         <div className="meal-guide-chips">{excelGuide.choices.slice(0, 3).map((choice) => <span key={choice}>{choice}</span>)}</div>
         <p className="meal-guide-warning"><b>注意</b>{excelGuide.cautions[0]}</p>
         <details><summary>展开全部建议与注意事项</summary><div><ul>{excelGuide.choices.map((choice) => <li key={choice}>{choice}</li>)}</ul><ul>{excelGuide.cautions.map((caution) => <li key={caution}>{caution}</li>)}</ul></div></details>
@@ -811,7 +811,7 @@ export default function Home() {
         </nav>
 
         <div className="hero-copy" id="top">
-          <p className="kicker">把 Excel 方案变成每一口的判断</p>
+          <p className="kicker">让每一餐都有清晰标准</p>
           <h1>今天这顿，<em>吃对了吗？</em></h1>
           <p>选择训练方案，系统自动拆分每日与每餐指标。记录食物或让 AI 看图识餐，立即看到余量、超标项和下一口建议。</p>
         </div>
@@ -823,7 +823,7 @@ export default function Home() {
           </div>
           <div className={`settings-body ${settingsOpen ? "open" : ""}`}>
           <div className="profile-grid">
-            <label className="field field-wide"><span>Excel 方案</span><select value={planValue} onChange={(e) => changePlan(e.target.value)}>{PLAN_OPTIONS.map((p) => <option key={`${p.goal}:${p.timing}`} value={`${p.goal}:${p.timing}`}>{p.label}</option>)}</select></label>
+            <label className="field field-wide"><span>训练方案</span><select value={planValue} onChange={(e) => changePlan(e.target.value)}>{PLAN_OPTIONS.map((p) => <option key={`${p.goal}:${p.timing}`} value={`${p.goal}:${p.timing}`}>{p.label}</option>)}</select></label>
             <label className="field"><span>性别</span><select value={profile.sex} onChange={(e) => updateProfile("sex", e.target.value as Sex)}><option value="male">男</option><option value="female">女</option></select></label>
             <label className="field"><span>年龄</span><div className="number-field"><input type="number" min="18" max="90" value={profile.age} onChange={(e) => updateProfile("age", Number(e.target.value))} /><b>岁</b></div></label>
             <label className="field"><span>身高</span><div className="number-field"><input type="number" min="120" max="230" value={profile.height} onChange={(e) => updateProfile("height", Number(e.target.value))} /><b>cm</b></div></label>
@@ -833,7 +833,7 @@ export default function Home() {
           </div>
           <div className="formula-strip">
             <span>BMI <b>{round(bmi, 1)}</b></span><span>基础代谢 <b>{round(calc.bmr)} kcal</b></span><span>今日平衡热量 <b>{round(effectiveDayType === "training" ? calc.trainMaintenance : calc.restMaintenance)} kcal</b></span>
-            <p>沿用原表 Mifflin–St Jeor 与配额系数；结果用于饮食规划，不代替医疗建议。</p>
+            <p>采用 Mifflin–St Jeor 与方案配额系数；结果用于饮食规划，不代替医疗建议。</p>
           </div>
           </div>
         </div>
@@ -877,7 +877,7 @@ export default function Home() {
 
         <div className="section-heading">
           <div><p className="eyebrow">05 · 逐餐记录</p><h2>每一餐都有清楚的边界</h2></div>
-          <p>每餐同时显示指标、动态补充建议，以及 Excel 原表规定的食物选择、进食顺序和注意事项。</p>
+          <p>每餐同时显示指标、动态补充建议、食物选择、进食顺序和注意事项。</p>
         </div>
 
         <section className="meal-grid">
@@ -916,7 +916,7 @@ export default function Home() {
 
         <footer>
           <div className="footer-mark"><span>餐</span><strong>把目标落到每一餐。</strong></div>
-          <p>配额逻辑源自所提供的《健身 Excel 超级套表》。智能秤体脂与软件计算均仅作趋势参考。</p>
+          <p>配额会根据当前目标、训练安排和身体数据计算。智能秤体脂与软件计算均仅作趋势参考。</p>
         </footer>
       </section>
       <nav className="mobile-nav" aria-label="移动端导航">

@@ -568,7 +568,7 @@ private struct TodayView: View {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "book.closed.fill").font(.title3).foregroundColor(brandGreen)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Excel 原表指导").font(.subheadline.weight(.semibold))
+                    Text("方案指导").font(.subheadline.weight(.semibold))
                     Text(store.planLabel).font(.caption2).foregroundColor(brandGreen)
                 }
                 Spacer()
@@ -688,7 +688,7 @@ private struct MealCard: View {
                 smallMetric("热量", consumed.kcal, target.kcal, unit: "k")
             }
             VStack(alignment: .leading, spacing: 8) {
-                Label("Excel 原表建议", systemImage: "book.closed")
+                Label("本餐建议", systemImage: "book.closed")
                     .font(.caption.weight(.semibold)).foregroundColor(brandGreen)
                 Text(guidance.summary).font(.caption).foregroundColor(.secondary)
                 ForEach(Array(guidance.choices.prefix(2)), id: \.self) { choice in

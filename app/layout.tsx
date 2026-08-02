@@ -7,7 +7,7 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata: Metadata = {
   title: "餐标｜每日饮食指标与逐餐记录",
-  description: "把健身 Excel 方案转化为每日、每餐目标，支持文字与图片 AI 识餐、记录食物并实时判断是否超标。",
+  description: "根据训练方案生成每日、每餐目标，支持文字与图片 AI 识餐、记录食物并实时判断是否超标。",
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "餐标" },
   icons: { icon: "/icon-192.png", shortcut: "/icon-192.png", apple: "/apple-touch-icon.png" },
