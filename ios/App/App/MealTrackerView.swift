@@ -274,6 +274,11 @@ final class MealStore: ObservableObject {
         customFoods.remove(atOffsets: offsets)
     }
 
+    func removeCustomFood(id: String) {
+        deletedFoodIDs.insert(id)
+        customFoods.removeAll { $0.id == id }
+    }
+
     var isServerPaired: Bool { !serverURL.isEmpty && ServerClient.shared.isPaired }
 
     func pair(serverURL: String, pairingCode: String) async {
@@ -979,30 +984,41 @@ private struct FoodLibraryView: View {
     @ObservedObject var store: MealStore
     @State private var search = ""
     @State private var showAdd = false
+    @State private var foodToDelete: Food?
 
     private var filtered: [Food] {
         search.isEmpty ? store.foods : store.foods.filter { $0.name.localizedCaseInsensitiveContains(search) || $0.category.contains(search) }
     }
 
+    private var builtInFoods: [Food] {
+        let customIDs = Set(store.customFoods.map(\.id))
+        return filtered.filter { !customIDs.contains($0.id) }
+    }
+
+    private var customFoods: [Food] {
+        let filteredIDs = Set(filtered.map(\.id))
+        return store.customFoods.filter { filteredIDs.contains($0.id) }
+    }
+
     var body: some View {
         NavigationView {
             List {
-                ForEach(filtered) { food in
-                    HStack(spacing: 12) {
-                        Image(systemName: icon(for: food.category))
-                            .frame(width: 34, height: 34).foregroundColor(brandGreen)
-                            .background(brandGreen.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(food.name).font(.subheadline.weight(.semibold))
-                            Text("每100g · 碳水 \(food.per100.carbs, specifier: "%.1f")g · 蛋白 \(food.per100.protein, specifier: "%.1f")g · 脂肪 \(food.per100.fat, specifier: "%.1f")g")
-                                .font(.caption2).foregroundColor(.secondary)
-                        }
-                    }.padding(.vertical, 4)
+                Section("基础食材") {
+                    ForEach(builtInFoods) { food in foodRow(food) }
                 }
-                if !store.customFoods.isEmpty {
-                    Section("自定义食物") {
-                        ForEach(store.customFoods) { Text($0.name) }
-                            .onDelete(perform: store.removeCustomFood)
+                if !customFoods.isEmpty {
+                    Section("我的食材") {
+                        ForEach(customFoods) { food in
+                            HStack {
+                                foodRow(food)
+                                Button(role: .destructive) { foodToDelete = food } label: {
+                                    Image(systemName: "trash").frame(width: 32, height: 32)
+                                }.buttonStyle(.borderless).accessibilityLabel("删除\(food.name)")
+                            }
+                            .swipeActions {
+                                Button(role: .destructive) { foodToDelete = food } label: { Label("删除", systemImage: "trash") }
+                            }
+                        }
                     }
                 }
             }
@@ -1011,8 +1027,27 @@ private struct FoodLibraryView: View {
             .navigationTitle("食物库")
             .toolbar { Button { showAdd = true } label: { Image(systemName: "plus") } }
             .sheet(isPresented: $showAdd) { AddCustomFoodView(store: store) }
+            .alert("删除食材？", isPresented: Binding(get: { foodToDelete != nil }, set: { if !$0 { foodToDelete = nil } }), presenting: foodToDelete) { food in
+                Button("删除", role: .destructive) { store.removeCustomFood(id: food.id); foodToDelete = nil }
+                Button("取消", role: .cancel) { foodToDelete = nil }
+            } message: { food in
+                Text("“\(food.name)”将从食材库移除，已经记录的历史餐次不会受影响。")
+            }
         }
         .navigationViewStyle(.stack)
+    }
+
+    private func foodRow(_ food: Food) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon(for: food.category))
+                .frame(width: 34, height: 34).foregroundColor(brandGreen)
+                .background(brandGreen.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(food.name).font(.subheadline.weight(.semibold))
+                Text("每100g · 碳水 \(food.per100.carbs, specifier: "%.1f")g · 蛋白 \(food.per100.protein, specifier: "%.1f")g · 脂肪 \(food.per100.fat, specifier: "%.1f")g")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+        }.padding(.vertical, 4)
     }
 
     private func icon(for category: String) -> String {

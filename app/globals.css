@@ -175,6 +175,18 @@ button { color: inherit; }
 .save-result-row p { margin: 0; color: #65705e; font-size: 9px; line-height: 1.5; }
 .save-result-row button { flex: 0 0 auto; height: 40px; padding: 0 14px; border: 0; border-radius: 9px; background: var(--ink); color: #fff; font-size: 10px; font-weight: 750; cursor: pointer; }
 .save-result-row button:disabled { background: var(--green); }
+.custom-library { margin-top: 18px; padding: 20px 22px; border: 1px solid var(--line); border-radius: 18px; background: var(--card); }
+.custom-library-heading { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 14px; }
+.custom-library-heading .eyebrow { color: var(--green); }
+.custom-library-heading h2 { margin: 2px 0 0; font-size: 22px; letter-spacing: -.04em; }
+.custom-library-heading > p { margin: 0; color: var(--muted); font-size: 9px; }
+.custom-library-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.custom-library-row { min-width: 0; display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 11px 12px; border: 1px solid #e5e8df; border-radius: 10px; background: #f9faf5; }
+.custom-library-row strong, .custom-library-row span { display: block; }
+.custom-library-row strong { font-size: 11px; }
+.custom-library-row span { margin-top: 4px; color: var(--muted); font-size: 8px; line-height: 1.45; }
+.custom-library-row button { height: 32px; padding: 0 10px; border: 1px solid #efd1cc; border-radius: 8px; background: #fff3f1; color: var(--red); font-size: 9px; font-weight: 730; cursor: pointer; }
+.custom-library-row button:hover { background: #fbe2de; }
 
 .section-heading { display: flex; justify-content: space-between; gap: 40px; align-items: end; margin: 58px 0 22px; }
 .section-heading .eyebrow { color: var(--green); }
@@ -311,6 +323,10 @@ footer p { color: var(--muted); font-size: 10px; max-width: 460px; text-align: r
   .ingredient-total span { flex-basis: 100%; }
   .save-result-row { align-items: stretch; flex-direction: column; gap: 10px; }
   .save-result-row button { width: 100%; }
+  .custom-library { padding: 17px 14px; }
+  .custom-library-heading { display: block; }
+  .custom-library-heading > p { margin-top: 7px; }
+  .custom-library-list { grid-template-columns: 1fr; }
   .section-heading { display: block; margin-top: 44px; }
   .section-heading h2 { font-size: 29px; }
   .section-heading > p { margin-top: 12px; }

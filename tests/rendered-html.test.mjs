@@ -17,6 +17,8 @@ test("contains the finished meal tracker experience", async () => {
   assert.match(page, /练前只垫碳水/);
   assert.match(page, /AI 会拆成基础食材/);
   assert.match(page, /保存.*种新食材/);
+  assert.match(page, /deleteCustomFood/);
+  assert.match(page, /删除后不会影响已经记录的历史餐次/);
   assert.match(page, /\/api\/sync/);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);
 });
@@ -36,6 +38,8 @@ test("ships a native SwiftUI iOS client with secure server sync and AI recogniti
   assert.match(nativeView, /HistoryView|FoodLibraryView|ProfileView/);
   assert.match(nativeView, /AIAnalyzeView|ServerSetupView|syncNow/);
   assert.match(nativeView, /保存未收录的基础食材/);
+  assert.match(nativeView, /removeCustomFood\(id:/);
+  assert.match(nativeView, /删除食材？/);
   assert.match(nativeView, /Text\("方案指导"\)/);
   assert.match(nativeView, /全天最大餐，最好练完后半小时内开始吃/);
   assert.match(serverClient, /kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly/);

@@ -532,6 +532,24 @@ function AiFoodAnalyzer({ foods, onSaveMany }: { foods: Food[]; onSaveMany: (foo
   );
 }
 
+function CustomFoodLibrary({ foods, onDelete }: { foods: Food[]; onDelete: (food: Food) => void }) {
+  if (!foods.length) return null;
+  return (
+    <section className="custom-library" id="food-library">
+      <div className="custom-library-heading">
+        <div><p className="eyebrow">我的食材</p><h2>已保存 {foods.length} 种</h2></div>
+        <p>删除后不会影响已经记录的历史餐次。</p>
+      </div>
+      <div className="custom-library-list">
+        {foods.map((food) => <div className="custom-library-row" key={food.id}>
+          <div><strong>{food.name}</strong><span>每100g · 碳水 {round(food.carbs, 1)}g · 蛋白质 {round(food.protein, 1)}g · 脂肪 {round(food.fat, 1)}g · {round(food.kcal)} kcal</span></div>
+          <button type="button" onClick={() => onDelete(food)} aria-label={`删除${food.name}`} title={`删除${food.name}`}>删除</button>
+        </div>)}
+      </div>
+    </section>
+  );
+}
+
 function MealCard({ meal, target, entries, foods, goal, dayType, onAdd, onRemove }: {
   meal: MealPreset;
   target: Macro;
@@ -811,6 +829,12 @@ export default function Home() {
     });
   }
 
+  function deleteCustomFood(food: Food) {
+    if (!window.confirm(`确定从食材库删除“${food.name}”吗？已记录的历史餐次不会受影响。`)) return;
+    markChanged();
+    setCustomFoods((current) => current.filter((item) => item.id !== food.id));
+  }
+
   function chooseDayType(next: DayType) {
     markChanged();
     setDayType(next);
@@ -916,6 +940,8 @@ export default function Home() {
         <PlanGuidance profile={profile} dayType={effectiveDayType} bmi={bmi} planLabel={currentPlanLabel} />
 
         <AiFoodAnalyzer foods={availableFoods} onSaveMany={saveCustomFoods} />
+
+        <CustomFoodLibrary foods={customFoods} onDelete={deleteCustomFood} />
 
         <div className="section-heading">
           <div><p className="eyebrow">05 · 逐餐记录</p><h2>每一餐都有清楚的边界</h2></div>
