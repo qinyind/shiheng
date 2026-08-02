@@ -19,7 +19,12 @@ class MemoryRepository {
   async saveAnalysis(_userID, key, value) { this.analyses.set(key, value); }
 }
 
-const config = { pairingCode: "correct-horse", openAIKey: "test-key", openAIModel: "gpt-4.1-mini" };
+const config = {
+  pairingCode: "correct-horse",
+  aiBaseURL: "http://cpa.internal:8317/v1/",
+  aiKey: "test-key",
+  aiModel: "gpt-5.4-mini",
+};
 
 test("配对、鉴权与版本同步", async () => {
   const app = buildApp({ config, repository: new MemoryRepository(), logger: false });
@@ -39,8 +44,9 @@ test("配对、鉴权与版本同步", async () => {
 test("AI 识餐使用结构化结果并缓存", async () => {
   const repository = new MemoryRepository();
   let calls = 0;
-  const fetchImpl = async (_url, options) => {
+  const fetchImpl = async (url, options) => {
     calls += 1;
+    assert.equal(url, "http://cpa.internal:8317/v1/responses");
     const request = JSON.parse(options.body);
     assert.equal(request.text.format.type, "json_schema");
     return new Response(JSON.stringify({ output_text: JSON.stringify({ name: "米饭", grams: 150, carbs: 45, protein: 3.9, fat: 0.5, kcal: 200, confidence: "high", note: "按熟米饭估算" }) }), { status: 200, headers: { "content-type": "application/json" } });

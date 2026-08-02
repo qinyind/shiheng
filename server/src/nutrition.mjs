@@ -37,13 +37,14 @@ function validateEstimate(value) {
   return numbers.every((key) => Number.isFinite(value[key]) && value[key] >= (key === "grams" ? 1 : 0));
 }
 
-export async function analyzeFood({ description, imageDataURL, apiKey, model, fetchImpl = fetch }) {
+export async function analyzeFood({ description, imageDataURL, apiKey, model, baseURL = "https://api.openai.com/v1", fetchImpl = fetch }) {
   const content = [{
     type: "input_text",
     text: `你是食品营养估算助手。估算用户实际食用的整份食物，而不是每100克。优先采用明确重量、包装营养标签和生熟状态；混合餐需包含烹调油和酱料。无法确定时使用保守常见值，并在 note 中说明假设。结果用于日常记录，不作医疗建议。\n\n用户描述：${description || "未提供文字，请根据图片估算。"}`,
   }];
   if (imageDataURL) content.push({ type: "input_image", image_url: imageDataURL, detail: "low" });
-  const upstream = await fetchImpl("https://api.openai.com/v1/responses", {
+  const responsesURL = `${baseURL.replace(/\/+$/, "")}/responses`;
+  const upstream = await fetchImpl(responsesURL, {
     method: "POST",
     headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
     body: JSON.stringify({

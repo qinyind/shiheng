@@ -48,7 +48,7 @@ export function buildApp({ config, repository, fetchImpl = fetch, logger = true 
   });
 
   app.post("/v1/ai/analyze-food", async (request, reply) => {
-    if (!config.openAIKey) return reply.code(503).send({ error: "服务器尚未配置 OPENAI_API_KEY" });
+    if (!config.aiKey) return reply.code(503).send({ error: "服务器尚未配置 AI_API_KEY" });
     const description = String(request.body?.description || "").trim();
     const imageDataURL = String(request.body?.imageDataURL || "");
     if (!description && !imageDataURL) return reply.code(400).send({ error: "请提供食物描述或照片" });
@@ -60,7 +60,14 @@ export function buildApp({ config, repository, fetchImpl = fetch, logger = true 
     const cached = await repository.getAnalysis(request.identity.userID, inputHash);
     if (cached) return { estimate: cached, cached: true };
     try {
-      const estimate = await analyzeFood({ description, imageDataURL, apiKey: config.openAIKey, model: config.openAIModel, fetchImpl });
+      const estimate = await analyzeFood({
+        description,
+        imageDataURL,
+        apiKey: config.aiKey,
+        model: config.aiModel,
+        baseURL: config.aiBaseURL,
+        fetchImpl,
+      });
       await repository.saveAnalysis(request.identity.userID, inputHash, estimate);
       return { estimate, cached: false };
     } catch (error) {
