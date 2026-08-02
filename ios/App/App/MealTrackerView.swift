@@ -4,6 +4,36 @@ import UIKit
 private let brandGreen = Color(red: 0.05, green: 0.42, blue: 0.30)
 private let brandLime = Color(red: 0.73, green: 0.89, blue: 0.30)
 
+private func dismissKeyboard() {
+    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+}
+
+private struct KeyboardDismissSupport: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 16.0, *) {
+            content
+                .scrollDismissesKeyboard(.interactively)
+                .toolbar { keyboardToolbar }
+        } else {
+            content.toolbar { keyboardToolbar }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var keyboardToolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .keyboard) {
+            Spacer()
+            Button("完成") { dismissKeyboard() }
+                .font(.body.weight(.semibold))
+        }
+    }
+}
+
+private extension View {
+    func keyboardDismissSupport() -> some View { modifier(KeyboardDismissSupport()) }
+}
+
 enum Sex: String, Codable, CaseIterable, Identifiable {
     case male, female
     var id: String { rawValue }
@@ -810,6 +840,7 @@ private struct AddFoodView: View {
                         .font(.footnote).foregroundColor(.secondary)
                 }
             }
+            .keyboardDismissSupport()
             .navigationTitle(meal.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -897,6 +928,7 @@ private struct AIAnalyzeView: View {
                     .disabled(isLoading || (description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && image == nil) || !store.isServerPaired)
                 }
             }
+            .keyboardDismissSupport()
             .navigationTitle("AI 识餐")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
@@ -1024,6 +1056,7 @@ private struct FoodLibraryView: View {
             }
             .listStyle(.insetGrouped)
             .searchable(text: $search, prompt: "搜索食物")
+            .keyboardDismissSupport()
             .navigationTitle("食物库")
             .toolbar { Button { showAdd = true } label: { Image(systemName: "plus") } }
             .sheet(isPresented: $showAdd) { AddCustomFoodView(store: store) }
@@ -1085,6 +1118,7 @@ private struct AddCustomFoodView: View {
                     numberField("热量", value: $kcal, unit: "kcal")
                 }
             }
+            .keyboardDismissSupport()
             .navigationTitle("自定义食物")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1161,6 +1195,7 @@ private struct ProfileView: View {
                         .font(.footnote).foregroundColor(.secondary)
                 }
             }
+            .keyboardDismissSupport()
             .navigationTitle("我的方案")
             .sheet(isPresented: $showServer) { ServerSetupView(store: store) }
         }
@@ -1214,6 +1249,7 @@ private struct ServerSetupView: View {
                     Section("连接结果") { Text(message).font(.footnote).foregroundColor(.red) }
                 }
             }
+            .keyboardDismissSupport()
             .navigationTitle("服务器设置")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear { url = store.serverURL }

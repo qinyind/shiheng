@@ -41,6 +41,8 @@ test("ships a native SwiftUI iOS client with secure server sync and AI recogniti
   assert.match(nativeView, /保存未收录的基础食材/);
   assert.match(nativeView, /removeCustomFood\(id:/);
   assert.match(nativeView, /删除食材？/);
+  assert.match(nativeView, /ToolbarItemGroup\(placement: \.keyboard\)/);
+  assert.match(nativeView, /scrollDismissesKeyboard\(\.interactively\)/);
   assert.match(nativeView, /Text\("方案指导"\)/);
   assert.match(nativeView, /全天最大餐，最好练完后半小时内开始吃/);
   assert.match(serverClient, /kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly/);
