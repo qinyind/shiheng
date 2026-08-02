@@ -44,6 +44,13 @@ type FoodEntry = {
   per100: Macro;
 };
 type DayLog = Record<string, FoodEntry[]>;
+type DayMeta = {
+  dayType: DayType;
+  target: Macro;
+  planLabel: string;
+  weight: number;
+  meals: MealPreset[];
+};
 
 const FOODS: Food[] = [
   { id: "rice", name: "熟米饭", category: "主食", carbs: 30, protein: 2.6, fat: 0.3, kcal: 133 },
@@ -367,6 +374,8 @@ export default function Home() {
   const [dayType, setDayType] = useState<DayType>("training");
   const [date, setDate] = useState(todayString());
   const [logs, setLogs] = useState<Record<string, DayLog>>({});
+  const [metas, setMetas] = useState<Record<string, DayMeta>>({});
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -376,6 +385,7 @@ export default function Home() {
         const parsed = JSON.parse(stored);
         if (parsed.profile) setProfile(parsed.profile);
         if (parsed.logs) setLogs(parsed.logs);
+        if (parsed.metas) setMetas(parsed.metas);
       }
     } catch { /* device-local storage is optional */ }
     setReady(true);
@@ -383,19 +393,39 @@ export default function Home() {
 
   useEffect(() => {
     if (!ready) return;
-    localStorage.setItem("meal-meter-state-v1", JSON.stringify({ profile, logs }));
-  }, [profile, logs, ready]);
+    localStorage.setItem("meal-meter-state-v1", JSON.stringify({ profile, logs, metas }));
+  }, [profile, logs, metas, ready]);
 
   const calc = useMemo(() => calculate(profile), [profile]);
-  const effectiveDayType: DayType = profile.timing === "none" ? "rest" : dayType;
-  const dailyTarget: Macro = effectiveDayType === "training"
+  const computedDayType: DayType = profile.timing === "none" ? "rest" : dayType;
+  const computedTarget: Macro = computedDayType === "training"
     ? { carbs: calc.trainingCarbs, protein: calc.protein, fat: calc.fat, kcal: calc.trainingKcal }
     : { carbs: calc.restCarbs, protein: calc.protein, fat: calc.fat, kcal: calc.restKcal };
-  const meals = effectiveDayType === "training" ? trainingMeals(profile.timing) : profile.timing === "breakfastEarly" ? EARLY_REST_MEALS : REST_MEALS;
+  const computedMeals = computedDayType === "training" ? trainingMeals(profile.timing) : profile.timing === "breakfastEarly" ? EARLY_REST_MEALS : REST_MEALS;
+  const dateMeta = metas[date];
+  const effectiveDayType = dateMeta?.dayType ?? computedDayType;
+  const dailyTarget = dateMeta?.target ?? computedTarget;
+  const meals = dateMeta?.meals ?? computedMeals;
   const dateLog = logs[date] || {};
   const dayEntries = meals.flatMap((meal) => dateLog[meal.id] || []);
   const consumed = sumMacros(dayEntries);
   const bmi = profile.weight / ((profile.height / 100) ** 2);
+  const currentPlanLabel = PLAN_OPTIONS.find((p) => p.goal === profile.goal && p.timing === profile.timing)?.label || "自定义方案";
+
+  const historyRows = useMemo(() => Object.keys(logs)
+    .filter((recordDate) => Object.values(logs[recordDate] || {}).some((items) => items.length > 0))
+    .sort((a, b) => b.localeCompare(a))
+    .map((recordDate) => {
+      const total = sumMacros(Object.values(logs[recordDate] || {}).flat());
+      const meta = metas[recordDate];
+      const target = meta?.target;
+      return {
+        date: recordDate,
+        total,
+        meta,
+        completion: target?.kcal ? Math.round((total.kcal / target.kcal) * 100) : 0,
+      };
+    }), [logs, metas]);
 
   function updateProfile<K extends keyof Profile>(key: K, value: Profile[K]) {
     setProfile((current) => ({ ...current, [key]: value }));
@@ -408,6 +438,9 @@ export default function Home() {
   }
 
   function addEntry(mealId: string, entry: FoodEntry) {
+    if (!metas[date]) {
+      setMetas((current) => ({ ...current, [date]: { dayType: computedDayType, target: computedTarget, planLabel: currentPlanLabel, weight: profile.weight, meals: computedMeals } }));
+    }
     setLogs((current) => ({
       ...current,
       [date]: { ...current[date], [mealId]: [...(current[date]?.[mealId] || []), entry] },
@@ -423,6 +456,29 @@ export default function Home() {
 
   function clearDay() {
     setLogs((current) => ({ ...current, [date]: {} }));
+    setMetas((current) => {
+      const next = { ...current };
+      delete next[date];
+      return next;
+    });
+  }
+
+  function chooseDayType(next: DayType) {
+    setDayType(next);
+    const nextTarget: Macro = next === "training"
+      ? { carbs: calc.trainingCarbs, protein: calc.protein, fat: calc.fat, kcal: calc.trainingKcal }
+      : { carbs: calc.restCarbs, protein: calc.protein, fat: calc.fat, kcal: calc.restKcal };
+    const nextMeals = next === "training" ? trainingMeals(profile.timing) : profile.timing === "breakfastEarly" ? EARLY_REST_MEALS : REST_MEALS;
+    setMetas((current) => ({ ...current, [date]: { dayType: next, target: nextTarget, planLabel: currentPlanLabel, weight: profile.weight, meals: nextMeals } }));
+  }
+
+  function openRecord(recordDate: string) {
+    setDate(recordDate);
+    document.getElementById("today")?.scrollIntoView({ behavior: "smooth" });
+  }
+
+  function scrollTo(id: string) {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
   }
 
   const planValue = `${profile.goal}:${profile.timing}`;
@@ -442,8 +498,12 @@ export default function Home() {
           <p>选择训练方案，系统自动拆分每日与每餐指标。记录食物后，立即看到余量、超标项和下一口建议。</p>
         </div>
 
-        <div className="profile-panel">
-          <div className="panel-title"><span>01</span><div><h2>建立今日目标</h2><p>默认载入你此前的 73kg 减脂晚饭前练方案</p></div></div>
+        <div className="profile-panel" id="settings">
+          <div className="panel-title"><span>01</span><div><h2>建立今日目标</h2><p>{currentPlanLabel}</p></div><button className="settings-toggle" onClick={() => setSettingsOpen((value) => !value)}>{settingsOpen ? "收起参数" : "调整参数"}</button></div>
+          <div className="profile-quick">
+            <span><b>{profile.weight}</b> kg</span><span><b>{round(bmi, 1)}</b> BMI</span><span><b>{round(dailyTarget.kcal)}</b> kcal</span><span><b>{round(dailyTarget.protein)}</b>g 蛋白质</span>
+          </div>
+          <div className={`settings-body ${settingsOpen ? "open" : ""}`}>
           <div className="profile-grid">
             <label className="field field-wide"><span>Excel 方案</span><select value={planValue} onChange={(e) => changePlan(e.target.value)}>{PLAN_OPTIONS.map((p) => <option key={`${p.goal}:${p.timing}`} value={`${p.goal}:${p.timing}`}>{p.label}</option>)}</select></label>
             <label className="field"><span>性别</span><select value={profile.sex} onChange={(e) => updateProfile("sex", e.target.value as Sex)}><option value="male">男</option><option value="female">女</option></select></label>
@@ -457,15 +517,16 @@ export default function Home() {
             <span>BMI <b>{round(bmi, 1)}</b></span><span>基础代谢 <b>{round(calc.bmr)} kcal</b></span><span>今日平衡热量 <b>{round(effectiveDayType === "training" ? calc.trainMaintenance : calc.restMaintenance)} kcal</b></span>
             <p>沿用原表 Mifflin–St Jeor 与配额系数；结果用于饮食规划，不代替医疗建议。</p>
           </div>
+          </div>
         </div>
       </section>
 
-      <section className="dashboard-shell">
+      <section className="dashboard-shell" id="today">
         <div className="day-toolbar">
           <div className="date-control"><button onClick={() => setDate(shiftDate(date, -1))} aria-label="前一天">←</button><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /><button onClick={() => setDate(shiftDate(date, 1))} aria-label="后一天">→</button></div>
           <div className="day-switch" aria-label="训练日类型">
-            <button className={effectiveDayType === "training" ? "active" : ""} disabled={profile.timing === "none"} onClick={() => setDayType("training")}>力训日</button>
-            <button className={effectiveDayType === "rest" ? "active" : ""} onClick={() => setDayType("rest")}>休息日</button>
+            <button className={effectiveDayType === "training" ? "active" : ""} disabled={profile.timing === "none"} onClick={() => chooseDayType("training")}>力训日</button>
+            <button className={effectiveDayType === "rest" ? "active" : ""} onClick={() => chooseDayType("rest")}>休息日</button>
           </div>
           <button className="clear-button" onClick={clearDay}>清空当天</button>
         </div>
@@ -508,11 +569,38 @@ export default function Home() {
           })}
         </section>
 
+        <section className="history-section" id="history">
+          <div className="section-heading history-heading">
+            <div><p className="eyebrow">04 · 历史记录</p><h2>每天的变化，都留得住</h2></div>
+            <p>记录按日期保存在当前设备；每一天会锁定当时的方案、体重和目标，之后调整参数不会改写旧记录。</p>
+          </div>
+          {historyRows.length ? (
+            <div className="history-list">
+              {historyRows.map((row) => (
+                <button className="history-row" key={row.date} onClick={() => openRecord(row.date)}>
+                  <div className="history-date"><strong>{row.date.slice(5).replace("-", "/")}</strong><span>{row.meta?.dayType === "training" ? "力训日" : "休息日"} · {row.meta?.weight || profile.weight}kg</span></div>
+                  <div className="history-plan">{row.meta?.planLabel || "历史方案"}</div>
+                  <div className="history-macros"><span>C {round(row.total.carbs)}g</span><span>P {round(row.total.protein)}g</span><span>F {round(row.total.fat)}g</span></div>
+                  <div className={`history-score ${row.completion > 110 ? "over" : ""}`}><strong>{row.completion}%</strong><span>{round(row.total.kcal)} kcal</span></div>
+                  <span className="history-arrow">→</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-history"><span>○</span><h3>还没有历史记录</h3><p>在任意一餐添加食物后，当天记录会自动保存在这里。</p></div>
+          )}
+        </section>
+
         <footer>
           <div className="footer-mark"><span>餐</span><strong>把目标落到每一餐。</strong></div>
           <p>配额逻辑源自所提供的《健身 Excel 超级套表》。智能秤体脂与软件计算均仅作趋势参考。</p>
         </footer>
       </section>
+      <nav className="mobile-nav" aria-label="移动端导航">
+        <button onClick={() => scrollTo("today")}><span>●</span>今日</button>
+        <button onClick={() => scrollTo("history")}><span>◷</span>历史</button>
+        <button onClick={() => { setSettingsOpen(true); scrollTo("settings"); }}><span>⌁</span>设置</button>
+      </nav>
     </main>
   );
 }
