@@ -13,7 +13,8 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "ios:add": "cap add ios",
-    "ios:sync": "cap sync ios",
+    "ios:web": "vite build native-web",
+    "ios:sync": "npm run ios:web && cap sync ios",
     "ios:open": "cap open ios"
   },
   "dependencies": {
