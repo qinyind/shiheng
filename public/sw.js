@@ -1,5 +1,12 @@
-const CACHE = "shiheng-v1";
-const SHELL = ["/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
+const CACHE = "shiheng-v2";
+const SHELL = [
+  "/",
+  "/manifest.webmanifest?v=shiheng-2",
+  "/favicon.svg?v=shiheng-2",
+  "/icon-192.png?v=shiheng-2",
+  "/icon-512.png?v=shiheng-2",
+  "/apple-touch-icon.png?v=shiheng-2",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));

@@ -723,7 +723,7 @@ export default function Home() {
     } catch { /* device-local storage is optional */ }
     const capacitorWindow = window as Window & { Capacitor?: { isNativePlatform?: () => boolean } };
     const isNativeApp = Boolean(capacitorWindow.Capacitor?.isNativePlatform?.());
-    if (!isNativeApp && "serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    if (!isNativeApp && "serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js?v=shiheng-2").catch(() => undefined);
     const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
     const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
     if (isIos && !isNativeApp && !navigatorWithStandalone.standalone && localStorage.getItem("meal-meter-ios-tip") !== "dismissed") setShowIosTip(true);
