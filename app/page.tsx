@@ -515,10 +515,12 @@ export default function Home() {
         lastModifiedRef.current = Number(parsed.updatedAt) || 0;
       }
     } catch { /* device-local storage is optional */ }
-    if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    const capacitorWindow = window as Window & { Capacitor?: { isNativePlatform?: () => boolean } };
+    const isNativeApp = Boolean(capacitorWindow.Capacitor?.isNativePlatform?.());
+    if (!isNativeApp && "serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
     const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
     const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    if (isIos && !navigatorWithStandalone.standalone && localStorage.getItem("meal-meter-ios-tip") !== "dismissed") setShowIosTip(true);
+    if (isIos && !isNativeApp && !navigatorWithStandalone.standalone && localStorage.getItem("meal-meter-ios-tip") !== "dismissed") setShowIosTip(true);
     setReady(true);
   }, []);
 
