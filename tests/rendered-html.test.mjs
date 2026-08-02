@@ -16,10 +16,11 @@ test("contains the finished meal tracker experience", async () => {
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);
 });
 
-test("ships a native SwiftUI iOS client without a web runtime", async () => {
-  const [sceneDelegate, nativeView, project] = await Promise.all([
+test("ships a native SwiftUI iOS client with secure server sync and AI recognition", async () => {
+  const [sceneDelegate, nativeView, serverClient, project] = await Promise.all([
     readFile(new URL("../ios/App/App/SceneDelegate.swift", import.meta.url), "utf8"),
     readFile(new URL("../ios/App/App/MealTrackerView.swift", import.meta.url), "utf8"),
+    readFile(new URL("../ios/App/App/ServerClient.swift", import.meta.url), "utf8"),
     readFile(new URL("../ios/App/App.xcodeproj/project.pbxproj", import.meta.url), "utf8"),
   ]);
 
@@ -28,5 +29,8 @@ test("ships a native SwiftUI iOS client without a web runtime", async () => {
   assert.match(nativeView, /TabView/);
   assert.match(nativeView, /meal-meter-native-state-v1/);
   assert.match(nativeView, /HistoryView|FoodLibraryView|ProfileView/);
+  assert.match(nativeView, /AIAnalyzeView|ServerSetupView|syncNow/);
+  assert.match(serverClient, /kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly/);
+  assert.match(serverClient, /\/v1\/ai\/analyze-food|\/v1\/sync/);
   assert.doesNotMatch(project, /CapApp-SPM in Frameworks|public in Resources/);
 });

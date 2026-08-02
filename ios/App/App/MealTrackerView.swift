@@ -111,11 +111,25 @@ struct FoodEntry: Identifiable, Codable, Hashable {
 
 extension Macro: Hashable {}
 
-private struct SavedState: Codable {
+struct SavedState: Codable {
     var profile: Profile
     var entries: [FoodEntry]
     var customFoods: [Food]
     var dayTypes: [String: DayType]
+    var deletedEntryIDs: Set<UUID>? = nil
+    var deletedFoodIDs: Set<String>? = nil
+}
+
+enum SyncState: Equatable {
+    case local, syncing, synced, error(String)
+    var title: String {
+        switch self {
+        case .local: return "仅保存在本机"
+        case .syncing: return "正在同步…"
+        case .synced: return "已与服务器同步"
+        case .error(let message): return message
+        }
+    }
 }
 
 @MainActor
@@ -125,20 +139,28 @@ final class MealStore: ObservableObject {
     @Published var customFoods: [Food] { didSet { save() } }
     @Published var dayTypes: [String: DayType] { didSet { save() } }
     @Published var selectedDate = Date()
+    @Published var serverURL: String { didSet { UserDefaults.standard.set(serverURL, forKey: "meal-meter-server-url") } }
+    @Published var syncState: SyncState = .local
 
     private let storageKey = "meal-meter-native-state-v1"
+    private var deletedEntryIDs: Set<UUID> = []
+    private var deletedFoodIDs: Set<String> = []
 
     init() {
         profile = Profile()
         entries = []
         customFoods = []
         dayTypes = [:]
+        serverURL = UserDefaults.standard.string(forKey: "meal-meter-server-url") ?? ""
         guard let data = UserDefaults.standard.data(forKey: storageKey),
               let state = try? JSONDecoder().decode(SavedState.self, from: data) else { return }
         profile = state.profile
         entries = state.entries
         customFoods = state.customFoods
         dayTypes = state.dayTypes
+        deletedEntryIDs = state.deletedEntryIDs ?? []
+        deletedFoodIDs = state.deletedFoodIDs ?? []
+        if !serverURL.isEmpty && ServerClient.shared.isPaired { syncState = .synced }
     }
 
     var foods: [Food] { Self.builtInFoods + customFoods }
@@ -181,6 +203,7 @@ final class MealStore: ObservableObject {
     }
 
     func remove(_ entry: FoodEntry) {
+        deletedEntryIDs.insert(entry.id)
         entries.removeAll { $0.id == entry.id }
     }
 
@@ -194,7 +217,57 @@ final class MealStore: ObservableObject {
     }
 
     func removeCustomFood(at offsets: IndexSet) {
+        for index in offsets { deletedFoodIDs.insert(customFoods[index].id) }
         customFoods.remove(atOffsets: offsets)
+    }
+
+    var isServerPaired: Bool { !serverURL.isEmpty && ServerClient.shared.isPaired }
+
+    func pair(serverURL: String, pairingCode: String) async {
+        syncState = .syncing
+        do {
+            try await ServerClient.shared.pair(serverURL: serverURL, pairingCode: pairingCode)
+            self.serverURL = serverURL.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            try await syncNow()
+        } catch {
+            syncState = .error(error.localizedDescription)
+        }
+    }
+
+    func disconnectServer() {
+        ServerClient.shared.disconnect()
+        syncState = .local
+    }
+
+    func syncNow() async throws {
+        guard isServerPaired else { throw ServerAPIError.notPaired }
+        syncState = .syncing
+        do {
+            var remote = try await ServerClient.shared.fetchState(serverURL: serverURL)
+            var merged = remote.state.map { merge(local: snapshot(), remote: $0) } ?? snapshot()
+            do {
+                remote = try await ServerClient.shared.pushState(serverURL: serverURL, state: merged, baseVersion: remote.version)
+            } catch ServerAPIError.conflict(let latest) {
+                if let latestState = latest.state { merged = merge(local: merged, remote: latestState) }
+                remote = try await ServerClient.shared.pushState(serverURL: serverURL, state: merged, baseVersion: latest.version)
+            }
+            apply(remote.state ?? merged)
+            syncState = .synced
+        } catch {
+            syncState = .error(error.localizedDescription)
+            throw error
+        }
+    }
+
+    func analyzeFood(description: String, image: UIImage?) async throws -> NutritionEstimate {
+        guard isServerPaired else { throw ServerAPIError.notPaired }
+        return try await ServerClient.shared.analyze(serverURL: serverURL, description: description, image: image)
+    }
+
+    func add(estimate: NutritionEstimate, mealID: String, saveCustom: Bool) {
+        let food = Food(id: "ai-\(UUID().uuidString)", name: estimate.name, category: "AI 识别", per100: estimate.per100)
+        if saveCustom { customFoods.append(food) }
+        add(food: food, grams: estimate.grams, mealID: mealID)
     }
 
     func totals(for key: String) -> Macro {
@@ -278,11 +351,37 @@ final class MealStore: ObservableObject {
     }
 
     private func save() {
-        let state = SavedState(profile: profile, entries: entries,
-                               customFoods: customFoods, dayTypes: dayTypes)
+        let state = snapshot()
         if let data = try? JSONEncoder().encode(state) {
             UserDefaults.standard.set(data, forKey: storageKey)
         }
+    }
+
+    private func snapshot() -> SavedState {
+        SavedState(profile: profile, entries: entries, customFoods: customFoods, dayTypes: dayTypes,
+                   deletedEntryIDs: deletedEntryIDs, deletedFoodIDs: deletedFoodIDs)
+    }
+
+    private func apply(_ state: SavedState) {
+        deletedEntryIDs = state.deletedEntryIDs ?? []
+        deletedFoodIDs = state.deletedFoodIDs ?? []
+        profile = state.profile
+        entries = state.entries.filter { !deletedEntryIDs.contains($0.id) }
+        customFoods = state.customFoods.filter { !deletedFoodIDs.contains($0.id) }
+        dayTypes = state.dayTypes
+        save()
+    }
+
+    private func merge(local: SavedState, remote: SavedState) -> SavedState {
+        let entryTombstones = (local.deletedEntryIDs ?? []).union(remote.deletedEntryIDs ?? [])
+        let foodTombstones = (local.deletedFoodIDs ?? []).union(remote.deletedFoodIDs ?? [])
+        let entries = Dictionary((remote.entries + local.entries).map { ($0.id, $0) }, uniquingKeysWith: { _, local in local })
+            .values.filter { !entryTombstones.contains($0.id) }.sorted { $0.dateKey < $1.dateKey }
+        let foods = Dictionary((remote.customFoods + local.customFoods).map { ($0.id, $0) }, uniquingKeysWith: { _, local in local })
+            .values.filter { !foodTombstones.contains($0.id) }
+        return SavedState(profile: local.profile, entries: Array(entries), customFoods: Array(foods),
+                          dayTypes: remote.dayTypes.merging(local.dayTypes) { _, local in local },
+                          deletedEntryIDs: entryTombstones, deletedFoodIDs: foodTombstones)
     }
 
     static func key(for date: Date) -> String {
@@ -316,6 +415,7 @@ final class MealStore: ObservableObject {
 
 struct MealTrackerRootView: View {
     @StateObject private var store = MealStore()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         TabView {
@@ -329,6 +429,14 @@ struct MealTrackerRootView: View {
                 .tabItem { Label("我的", systemImage: "person.crop.circle") }
         }
         .accentColor(brandGreen)
+        .task {
+            if store.isServerPaired { try? await store.syncNow() }
+        }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active && store.isServerPaired {
+                Task { try? await store.syncNow() }
+            }
+        }
     }
 }
 
@@ -551,6 +659,7 @@ private struct AddFoodView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var foodID = "rice"
     @State private var grams = 150.0
+    @State private var showAI = false
 
     var body: some View {
         NavigationView {
@@ -573,8 +682,11 @@ private struct AddFoodView: View {
                         HStack { Text("脂肪"); Spacer(); Text("\(estimate.fat, specifier: "%.1f")g") }
                     }
                 }
-                Section {
-                    Label("AI 文字与图片识餐将在独立后端接入后开放", systemImage: "sparkles")
+                Section("智能识餐") {
+                    Button { showAI = true } label: {
+                        Label("用文字或照片自动计算", systemImage: "camera.macro")
+                    }
+                    Text(store.isServerPaired ? "AI 会估算整份食物，确认后可直接记入本餐并保存为自定义食物。" : "请先在“我的方案”中连接服务器。")
                         .font(.footnote).foregroundColor(.secondary)
                 }
             }
@@ -591,7 +703,95 @@ private struct AddFoodView: View {
                     .font(.body.weight(.semibold))
                 }
             }
+            .sheet(isPresented: $showAI) { AIAnalyzeView(store: store, meal: meal) }
         }
+    }
+}
+
+private struct AIAnalyzeView: View {
+    @ObservedObject var store: MealStore
+    let meal: MealPreset
+    @Environment(\.dismiss) private var dismiss
+    @State private var description = ""
+    @State private var image: UIImage?
+    @State private var showPicker = false
+    @State private var estimate: NutritionEstimate?
+    @State private var isLoading = false
+    @State private var errorMessage = ""
+    @State private var saveCustom = true
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("描述食物") {
+                    TextEditor(text: $description).frame(minHeight: 90)
+                    Text("示例：熟米饭 150g、煎鸡胸肉 180g，用油约 8g")
+                        .font(.caption).foregroundColor(.secondary)
+                    Button { showPicker = true } label: {
+                        Label(image == nil ? "选择食物或营养标签照片" : "重新选择照片", systemImage: "photo")
+                    }
+                    if let image { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 180).clipShape(RoundedRectangle(cornerRadius: 12)) }
+                }
+                if let estimate {
+                    Section("AI 估算 · 整份") {
+                        HStack { Text(estimate.name).font(.headline); Spacer(); Text("约 \(Int(estimate.grams.rounded()))g") }
+                        HStack { Text("碳水"); Spacer(); Text("\(estimate.carbs, specifier: "%.1f")g") }
+                        HStack { Text("蛋白质"); Spacer(); Text("\(estimate.protein, specifier: "%.1f")g") }
+                        HStack { Text("脂肪"); Spacer(); Text("\(estimate.fat, specifier: "%.1f")g") }
+                        HStack { Text("热量"); Spacer(); Text("\(Int(estimate.kcal.rounded())) kcal") }
+                        Text(estimate.note).font(.caption).foregroundColor(.secondary)
+                        Toggle("保存为自定义食物", isOn: $saveCustom)
+                        Button("记入\(meal.name)") {
+                            store.add(estimate: estimate, mealID: meal.id, saveCustom: saveCustom)
+                            dismiss()
+                        }.font(.body.weight(.semibold))
+                    }
+                }
+                if !errorMessage.isEmpty { Section { Text(errorMessage).foregroundColor(.red).font(.footnote) } }
+                Section {
+                    Button {
+                        Task { await analyze() }
+                    } label: {
+                        HStack { Spacer(); if isLoading { ProgressView().padding(.trailing, 8) }; Text(isLoading ? "正在识别" : "开始计算"); Spacer() }
+                    }
+                    .disabled(isLoading || (description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && image == nil) || !store.isServerPaired)
+                }
+            }
+            .navigationTitle("AI 识餐")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
+            .sheet(isPresented: $showPicker) { ImagePicker(image: $image) }
+        }
+    }
+
+    @MainActor private func analyze() async {
+        isLoading = true
+        errorMessage = ""
+        defer { isLoading = false }
+        do { estimate = try await store.analyzeFood(description: description, image: image) }
+        catch { errorMessage = error.localizedDescription }
+    }
+}
+
+private struct ImagePicker: UIViewControllerRepresentable {
+    @Binding var image: UIImage?
+    @Environment(\.dismiss) private var dismiss
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .photoLibrary
+        picker.delegate = context.coordinator
+        return picker
+    }
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
+        let parent: ImagePicker
+        init(parent: ImagePicker) { self.parent = parent }
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            parent.image = info[.originalImage] as? UIImage
+            parent.dismiss()
+        }
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { parent.dismiss() }
     }
 }
 
@@ -737,6 +937,7 @@ private struct AddCustomFoodView: View {
 
 private struct ProfileView: View {
     @ObservedObject var store: MealStore
+    @State private var showServer = false
 
     var body: some View {
         NavigationView {
@@ -775,12 +976,23 @@ private struct ProfileView: View {
                     HStack { Text("脂肪"); Spacer(); Text("\(Int(target.fat.rounded()))g") }
                     HStack { Text("热量"); Spacer(); Text("\(Int(target.kcal.rounded())) kcal") }
                 }
-                Section {
-                    Label("本地模式不会上传你的身体数据和饮食历史。", systemImage: "lock.shield")
+                Section("服务器同步") {
+                    HStack {
+                        Label(store.syncState.title, systemImage: store.isServerPaired ? "checkmark.icloud" : "icloud.slash")
+                            .font(.footnote).foregroundColor(store.isServerPaired ? brandGreen : .secondary)
+                        Spacer()
+                        if case .syncing = store.syncState { ProgressView() }
+                    }
+                    if store.isServerPaired {
+                        Button("立即同步") { Task { try? await store.syncNow() } }
+                    }
+                    Button(store.isServerPaired ? "服务器设置" : "连接自己的服务器") { showServer = true }
+                    Text(store.isServerPaired ? "身体数据、饮食历史和自定义食物会通过 HTTPS 同步；OpenAI 密钥只保存在服务器。" : "不连接时仍可完整离线使用，数据只保存在此 iPhone。")
                         .font(.footnote).foregroundColor(.secondary)
                 }
             }
             .navigationTitle("我的方案")
+            .sheet(isPresented: $showServer) { ServerSetupView(store: store) }
         }
         .navigationViewStyle(.stack)
     }
@@ -792,6 +1004,50 @@ private struct ProfileView: View {
             TextField("0", value: value, format: .number)
                 .keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(maxWidth: 90)
             Text(unit).foregroundColor(.secondary)
+        }
+    }
+}
+
+private struct ServerSetupView: View {
+    @ObservedObject var store: MealStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var url = ""
+    @State private var pairingCode = ""
+    @State private var working = false
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("服务器地址") {
+                    TextField("https://meals.example.com", text: $url)
+                        .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    SecureField("服务器配对码", text: $pairingCode)
+                    Text("正式版本只接受 HTTPS。配对成功后，设备令牌保存在 iPhone 钥匙串中。")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                Section {
+                    Button {
+                        working = true
+                        Task {
+                            await store.pair(serverURL: url, pairingCode: pairingCode)
+                            working = false
+                            if store.isServerPaired { dismiss() }
+                        }
+                    } label: {
+                        HStack { Spacer(); if working { ProgressView().padding(.trailing, 8) }; Text("连接并同步"); Spacer() }
+                    }.disabled(working || url.isEmpty || pairingCode.isEmpty)
+                    if store.isServerPaired {
+                        Button("断开此设备", role: .destructive) { store.disconnectServer(); dismiss() }
+                    }
+                }
+                if case .error(let message) = store.syncState {
+                    Section("连接结果") { Text(message).font(.footnote).foregroundColor(.red) }
+                }
+            }
+            .navigationTitle("服务器设置")
+            .navigationBarTitleDisplayMode(.inline)
+            .onAppear { url = store.serverURL }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
         }
     }
 }

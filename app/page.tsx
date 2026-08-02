@@ -508,6 +508,7 @@ export default function Home() {
       const stored = localStorage.getItem("meal-meter-state-v1");
       if (stored) {
         const parsed = JSON.parse(stored);
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate persisted device state once on mount
         if (parsed.profile) setProfile(parsed.profile);
         if (parsed.logs) setLogs(parsed.logs);
         if (parsed.metas) setMetas(parsed.metas);
@@ -562,6 +563,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!ready || !cloudReady) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reflect the debounced persistence state immediately
     setSyncStatus("saving");
     const timer = window.setTimeout(async () => {
       try {
@@ -680,6 +682,7 @@ export default function Home() {
   }
 
   function markChanged() {
+    // eslint-disable-next-line react-hooks/purity -- called only from user event handlers to version local mutations
     lastModifiedRef.current = Date.now();
     if (cloudReady) setSyncStatus("saving");
   }

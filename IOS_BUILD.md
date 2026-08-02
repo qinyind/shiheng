@@ -1,25 +1,20 @@
-# 餐标 iOS 构建
+# 餐标 iOS 原生版构建
 
-项目已包含 Capacitor iOS 工程，应用标识为 `cn.mealmeter.app`，最低支持 iOS 15。
+客户端是纯 SwiftUI，应用标识为 `cn.mealmeter.app`，最低支持 iOS 15。最终 target 不包含 WebView、网页资源或 Capacitor 运行时。
 
 ## 在 Mac 上运行
 
-1. 安装 Node.js 22、Xcode 和 Xcode Command Line Tools。
-2. 在项目目录执行 `npm install`。
-3. 执行 `npm run ios:sync`，把最新配置同步到 Xcode 工程。
-4. 执行 `npm run ios:open`，或直接打开 `ios/App/App.xcodeproj`。
-5. 在 Xcode 的 Signing & Capabilities 中选择开发团队；如果 Bundle ID 已被占用，将 `cn.mealmeter.app` 改成自己账号下的唯一标识。
-6. 连接 iPhone 后选择设备并运行。TestFlight / App Store 发布使用 Xcode 的 Archive 流程。
+1. 用 Xcode 打开 `ios/App/App.xcodeproj`。
+2. 在 Signing & Capabilities 中选择个人开发团队；如 Bundle ID 冲突，改成自己的唯一标识。
+3. 连接 iPhone、选择设备并运行。
+4. 免费 Apple ID 的签名仍有 7 天期限；也可把无签名 IPA 交给 AltServer 安装，由 AltServer 完成设备签名。
 
-## 应用结构
+## 连接服务器
 
-- iOS 工程负责原生容器、应用图标、启动页、相机和相册权限。
-- 页面加载正式站点 `https://meal-meter-cn.qq843341432.chatgpt.site`。
-- AI 密钥、营养分析和云端同步均留在服务器端，不进入 iOS 安装包。
-- 正式站点当前需要 ChatGPT 登录；首次打开 App 时会在应用内完成登录。
+服务端位于 `server/`，部署方法见 `server/README.md`。上线后在 App 的“我的 → 服务器同步”填写 HTTPS 地址和配对码。配对生成的设备令牌存入 iOS 钥匙串，OpenAI API 密钥不会进入安装包。
 
-## 发布前检查
+## 功能验证
 
-- 在真实 iPhone 上验证 ChatGPT 登录回跳、拍照、相册选择和断网提示。
-- 配置服务器端 `OPENAI_API_KEY` 后再验证 AI 识餐。
-- 在 App Store Connect 中补充隐私政策、营养估算免责声明、截图和应用描述。
+- 原生录餐、每日指标、自定义食物和历史记录可完全离线使用。
+- 配对后验证历史同步和冲突合并。
+- 配置 `OPENAI_API_KEY` 后验证文字识餐、相册照片识餐、保存为自定义食物。
