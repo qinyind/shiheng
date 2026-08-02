@@ -17,10 +17,6 @@
 	import meal_meter_backend
 }
 
-https://{$APP_DOMAIN}:8443 {
-	import meal_meter_backend
-}
-
 http://47.122.112.92 {
 	handle /.well-known/acme-challenge/* {
 		root * /var/www/certbot
