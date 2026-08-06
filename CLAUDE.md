@@ -1,8 +1,8 @@
 # CLAUDE.md
 
-健身/饮食管理应用。代码在 `webapp/`（Next.js + vinext + Cloudflare + Capacitor iOS + Drizzle/SQLite）。git 仓库在根目录；根目录另有 Excel 数据套表（不入库）与 `releases/` 发行产物。
+健身/饮食管理应用（Next.js + vinext + Cloudflare + Capacitor iOS + Drizzle/SQLite）。git 仓库在根目录；根目录另有 Excel 数据套表（不入库）与 `releases/` 发行产物。
 
-## 常用命令（在 `webapp/` 下执行）
+## 常用命令（在根目录执行）
 
 - **dev**:   `npm run dev`（vinext dev，Cloudflare 本地环境）
 - **build**: `npm run build`
@@ -15,3 +15,4 @@
 
 - 个人数据 Excel（根目录 `*.xlsx`）被 git 忽略，不入库
 - `ios/` 是 Capacitor 原生壳；web 端由 vinext 构建
+- `.claude/`（ECC 配置）被 git 忽略，仅本机生效

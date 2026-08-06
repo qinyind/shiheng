@@ -6,32 +6,50 @@ Thumbs.db
 # --- Logs ---
 *.log
 npm-debug.log*
+yarn-debug.log*
 yarn-error.log*
+.pnpm-debug.log*
 
 # --- Env / secrets ---
 .env
 .env.*
 !.env.example
+*.pem
 
 # --- Node ---
 node_modules/
+server/node_modules/
 *.tsbuildinfo
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+next-env.d.ts
 
 # --- Data / large binaries (personal data workbooks, not code) ---
 *.xlsx
 
-# --- Build output (webapp, kept for when webapp/ is merged into this repo;
-#     while webapp/ stays an embedded repo its own .gitignore governs these) ---
-webapp/.next/
-webapp/dist/
-webapp/.wrangler/
-webapp/capacitor-shell/
-webapp/ios/App/App/public/
-webapp/ios/App/Pods/
-webapp/ios/build/
-webapp/ios/DerivedData/
-webapp/android/
-webapp/releases/
+# --- Build output / generated ---
+.next/
+.vinext/
+.wrangler/
+dist/
+out/
+outputs/
+work/
+coverage/
+capacitor-shell/
+ios/App/App/public/
+ios/App/Pods/
+ios/build/
+ios/DerivedData/
+android/
+.vercel
+*-preview.png
+releases/
 
 # --- Claude Code tool config (personal, not shared with team) ---
 .claude/
