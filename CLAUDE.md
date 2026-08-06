@@ -10,11 +10,10 @@
 - **test**:  `npm test`（`packages/domain` 单测 + 覆盖率）；类型检查 `npm run test:expo`；服务端测试 `npm run test:server`
 - **lint**:  `npm run lint`（eslint）
 - **db**:    `npm run db:generate`（drizzle-kit 生成迁移，配置在 `packages/db/`）
-- **ios**:   `npm run ios:open`（打开 `apps/native/ios` 的 Xcode 工程，Phase 4 前暂存）
 
 ## 备注
 
 - 个人数据 Excel 与发行产物在 `data/`（`*.xlsx` 及整个 `data/` 被 git 忽略）
-- `apps/expo/` 是唯一前端实现；`apps/native/` 为旧 Capacitor/SwiftUI 壳（待删除）
+- `apps/expo/` 是唯一前端实现（旧 Capacitor/SwiftUI 壳已于 Phase 4 删除）
 - Web 与 iOS 领域逻辑共用 `packages/domain`，避免双实现漂移
 - `.claude/`（ECC 配置）被 git 忽略，仅本机生效

@@ -15,9 +15,8 @@
     "test:domain": "node --test --experimental-test-coverage \"packages/domain/src/**/*.test.ts\"",
     "test:expo": "npm run typecheck --workspace @diet/expo",
     "test:server": "npm --prefix services/server test",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern apps/native/capacitor-shell --ignore-pattern apps/native/ios/App/App/public --ignore-pattern apps/expo",
-    "db:generate": "drizzle-kit generate --config packages/db/drizzle.config.ts",
-    "ios:open": "open apps/native/ios/App/App.xcodeproj"
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern apps/expo",
+    "db:generate": "drizzle-kit generate --config packages/db/drizzle.config.ts"
   },
   "overrides": {
     "react": "19.2.6",
