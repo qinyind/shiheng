@@ -10,26 +10,19 @@ test("contains the finished meal tracker experience", async () => {
 
   assert.match(layout, /title:\s*"食衡｜每日饮食指标与逐餐记录"/);
   assert.match(page, /aria-label="食衡首页"/);
-  assert.match(page, /5 减脂 · 晚饭前练/);
-  assert.match(page, /13 增肌 · 晚饭前练/);
   assert.match(page, /meal-meter-state-v1/);
   assert.match(page, /03 · 方案指导/);
   assert.match(page, /水果10g碳水≈少吃30g一般熟米饭/);
-  assert.match(page, /练前只垫碳水/);
   assert.match(page, /AI 会拆成基础食材/);
   assert.match(page, /保存.*种食材/);
   assert.match(page, /deleteCustomFood/);
   assert.match(page, /删除后不会影响已经记录的历史餐次/);
   assert.match(page, /\/api\/sync/);
-  // 训练日/休息日共享同一组真实餐次 ID，切换后记录不会丢失
-  assert.match(page, /id: "breakfast", name: "早饭 · 练前"/);
-  assert.match(page, /id: "lunch", name: "午饭 · 练后"/);
-  assert.match(page, /id: "dinner", name: "晚饭 · 练后"/);
-  assert.match(page, /id: "dinner", name: "晚饭 · 练前"/);
-  assert.doesNotMatch(page, /id: "breakfast-pre"/);
-  assert.doesNotMatch(page, /id: "lunch-post"/);
-  assert.match(page, /LEGACY_MEAL_ID_MAP/);
-  assert.match(page, /migrateDayLogs|migrateMetas/);
+  // 共享逻辑已抽到 @diet/domain；page.tsx 不再内联餐次 ID、迁移与计算逻辑
+  assert.match(page, /from "@diet\/domain"/);
+  assert.doesNotMatch(page, /LEGACY_MEAL_ID_MAP/);
+  assert.doesNotMatch(page, /id: "breakfast", name: "早饭 · 练前"/);
+  assert.doesNotMatch(page, /id: "lunch", name: "午饭 · 练后"/);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);
 });
 

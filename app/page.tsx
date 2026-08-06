@@ -1,389 +1,43 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-
-type Sex = "male" | "female";
-type Goal = "cut" | "gain";
-type Level = "beginner" | "intermediate" | "advanced";
-type Timing =
-  | "breakfastEarly"
-  | "breakfastLate"
-  | "beforeLunch"
-  | "afterLunch"
-  | "beforeDinner"
-  | "afterDinner"
-  | "lateNight"
-  | "none";
-type DayType = "training" | "rest";
-
-type Profile = {
-  sex: Sex;
-  age: number;
-  height: number;
-  weight: number;
-  goal: Goal;
-  timing: Timing;
-  level: Level;
-  cardioDaily: number;
-};
-
-type Macro = { carbs: number; protein: number; fat: number; kcal: number };
-type MealPreset = {
-  id: string;
-  name: string;
-  note: string;
-  carbShare: number;
-  proteinShare: number;
-};
-type Food = Macro & { id: string; name: string; category: string; unit?: string };
-type AiIngredient = Macro & { name: string; grams: number };
-type AiEstimate = Macro & {
-  name: string;
-  grams: number;
-  confidence: "low" | "medium" | "high";
-  note: string;
-  ingredients: AiIngredient[];
-};
-type FoodEntry = {
-  id: string;
-  foodId: string;
-  name: string;
-  grams: number;
-  per100: Macro;
-};
-type DayLog = Record<string, FoodEntry[]>;
-type DayMeta = {
-  dayType: DayType;
-  target: Macro;
-  planLabel: string;
-  weight: number;
-  meals: MealPreset[];
-};
-type SyncStatus = "connecting" | "saving" | "synced" | "local";
-type MealRole = "breakfast" | "regular" | "pre" | "post" | "snack";
-type MealGuide = { summary: string; choices: string[]; cautions: string[] };
-
-const FOODS: Food[] = [
-  { id: "rice", name: "熟米饭", category: "主食", carbs: 30, protein: 2.6, fat: 0.3, kcal: 133 },
-  { id: "mantou", name: "馒头 / 花卷", category: "主食", carbs: 50, protein: 7, fat: 1, kcal: 237 },
-  { id: "oats", name: "速食燕麦片", category: "主食", carbs: 60, protein: 13.5, fat: 7, kcal: 367 },
-  { id: "sweet-potato", name: "蒸煮红薯", category: "主食", carbs: 18, protein: 1.6, fat: 0.2, kcal: 80 },
-  { id: "potato", name: "蒸煮土豆", category: "主食", carbs: 18, protein: 2, fat: 0.1, kcal: 81 },
-  { id: "bread", name: "切片面包", category: "主食", carbs: 50, protein: 9, fat: 4, kcal: 272 },
-  { id: "banana", name: "香蕉（可食部）", category: "水果", carbs: 22, protein: 1.1, fat: 0.3, kcal: 89 },
-  { id: "apple", name: "苹果（可食部）", category: "水果", carbs: 14, protein: 0.3, fat: 0.2, kcal: 57 },
-  { id: "chicken", name: "熟鸡胸肉", category: "蛋白质", carbs: 0, protein: 25, fat: 4, kcal: 136 },
-  { id: "lean-meat", name: "一般熟瘦肉", category: "蛋白质", carbs: 0, protein: 25, fat: 6, kcal: 154 },
-  { id: "fish", name: "熟鱼虾", category: "蛋白质", carbs: 0, protein: 23, fat: 3, kcal: 119 },
-  { id: "egg", name: "全蛋", category: "蛋白质", carbs: 1.1, protein: 12.6, fat: 10.6, kcal: 143 },
-  { id: "milk", name: "全脂牛奶", category: "蛋白质", carbs: 4.8, protein: 3.2, fat: 3.3, kcal: 61 },
-  { id: "whey", name: "蛋白粉", category: "蛋白质", carbs: 8, protein: 75, fat: 6, kcal: 386 },
-  { id: "tofu", name: "豆腐", category: "蛋白质", carbs: 3, protein: 7, fat: 5, kcal: 85 },
-  { id: "jerky", name: "低糖瘦肉干", category: "蛋白质", carbs: 8, protein: 40, fat: 5, kcal: 237 },
-  { id: "nuts", name: "混合坚果", category: "脂肪", carbs: 18, protein: 20, fat: 50, kcal: 602 },
-  { id: "oil", name: "烹调油（实际摄入）", category: "脂肪", carbs: 0, protein: 0, fat: 100, kcal: 900 },
-  { id: "broccoli", name: "西兰花", category: "蔬菜", carbs: 7, protein: 2.8, fat: 0.4, kcal: 34 },
-];
-
-const PLAN_OPTIONS: Array<{ goal: Goal; timing: Timing; label: string }> = [
-  { goal: "cut", timing: "breakfastEarly", label: "1 减脂 · 早饭后练（早起）" },
-  { goal: "cut", timing: "breakfastLate", label: "2 减脂 · 早饭后练（晚起）" },
-  { goal: "cut", timing: "beforeLunch", label: "3 减脂 · 午饭前练" },
-  { goal: "cut", timing: "afterLunch", label: "4 减脂 · 午饭后练" },
-  { goal: "cut", timing: "beforeDinner", label: "5 减脂 · 晚饭前练" },
-  { goal: "cut", timing: "afterDinner", label: "6 减脂 · 晚饭后练" },
-  { goal: "cut", timing: "lateNight", label: "7 减脂 · 夜里练" },
-  { goal: "cut", timing: "none", label: "8 减脂 · 无力训者" },
-  { goal: "gain", timing: "breakfastEarly", label: "9 增肌 · 早饭后练（早起）" },
-  { goal: "gain", timing: "breakfastLate", label: "10 增肌 · 早饭后练（晚起）" },
-  { goal: "gain", timing: "beforeLunch", label: "11 增肌 · 午饭前练" },
-  { goal: "gain", timing: "afterLunch", label: "12 增肌 · 午饭后练" },
-  { goal: "gain", timing: "beforeDinner", label: "13 增肌 · 晚饭前练" },
-  { goal: "gain", timing: "afterDinner", label: "14 增肌 · 晚饭后练" },
-  { goal: "gain", timing: "lateNight", label: "15 增肌 · 夜里练" },
-];
-
-const REST_MEALS: MealPreset[] = [
-  { id: "breakfast", name: "早饭", note: "稳定开启一天", carbShare: 0.2, proteinShare: 0.2 },
-  { id: "lunch", name: "午饭", note: "常规正餐", carbShare: 0.35, proteinShare: 0.3 },
-  { id: "dinner", name: "晚饭", note: "常规正餐", carbShare: 0.35, proteinShare: 0.3 },
-  { id: "snack", name: "零食 / 夜宵", note: "碳水主要作漏算预留", carbShare: 0.1, proteinShare: 0.2 },
-];
-
-const EARLY_REST_MEALS: MealPreset[] = [
-  { id: "breakfast", name: "早饭", note: "与训练日早饭一致", carbShare: 0.15, proteinShare: 0.2 },
-  { id: "lunch", name: "午饭", note: "常规正餐", carbShare: 0.375, proteinShare: 0.3 },
-  { id: "dinner", name: "晚饭", note: "常规正餐", carbShare: 0.375, proteinShare: 0.3 },
-  { id: "snack", name: "零食 / 夜宵", note: "碳水主要作漏算预留", carbShare: 0.1, proteinShare: 0.2 },
-];
-
-function trainingMeals(timing: Timing): MealPreset[] {
-  switch (timing) {
-    case "breakfastEarly":
-      return [
-        { id: "breakfast", name: "早饭 · 练前", note: "少量、易消化", carbShare: 0.15, proteinShare: 0.2 },
-        { id: "post", name: "练后餐", note: "全天最大餐", carbShare: 0.35, proteinShare: 0.2 },
-        { id: "lunch", name: "午饭", note: "其他餐", carbShare: 0.2, proteinShare: 0.2 },
-        { id: "dinner", name: "晚饭", note: "其他餐", carbShare: 0.2, proteinShare: 0.2 },
-        { id: "snack", name: "零食 / 夜宵", note: "碳水主要作漏算预留", carbShare: 0.1, proteinShare: 0.2 },
-      ];
-    case "breakfastLate":
-      return [
-        { id: "breakfast", name: "早饭 · 练前", note: "训练前主餐", carbShare: 0.2, proteinShare: 0.2 },
-        { id: "lunch", name: "午饭 · 练后", note: "全天最大餐", carbShare: 0.4, proteinShare: 0.3 },
-        { id: "dinner", name: "晚饭", note: "其他餐", carbShare: 0.3, proteinShare: 0.3 },
-        { id: "snack", name: "零食 / 夜宵", note: "碳水主要作漏算预留", carbShare: 0.1, proteinShare: 0.2 },
-      ];
-    case "beforeLunch":
-      return standardTimedMeals("练前餐", "午饭 · 练后", "晚饭", "before-lunch");
-    case "afterLunch":
-      return standardTimedMeals("午饭 · 练前", "练后餐", "晚饭", "after-lunch");
-    case "beforeDinner":
-      return [
-        { id: "breakfast", name: "早饭", note: "常规早餐", carbShare: 0.2, proteinShare: 0.2 },
-        { id: "lunch", name: "午饭", note: "其他餐", carbShare: 0.2, proteinShare: 0.3 },
-        { id: "pre", name: "练前餐", note: "只垫少量碳水", carbShare: 0.15, proteinShare: 0 },
-        { id: "dinner", name: "晚饭 · 练后", note: "全天最大餐", carbShare: 0.35, proteinShare: 0.3 },
-        { id: "snack", name: "零食 / 夜宵", note: "碳水主要作漏算预留", carbShare: 0.1, proteinShare: 0.2 },
-      ];
-    case "afterDinner":
-      return [
-        { id: "breakfast", name: "早饭", note: "常规早餐", carbShare: 0.2, proteinShare: 0.2 },
-        { id: "lunch", name: "午饭", note: "其他餐", carbShare: 0.2, proteinShare: 0.3 },
-        { id: "dinner", name: "晚饭 · 练前", note: "控制到五六分饱", carbShare: 0.15, proteinShare: 0 },
-        { id: "post", name: "练后餐", note: "补充碳水和蛋白质", carbShare: 0.35, proteinShare: 0.3 },
-        { id: "snack", name: "零食 / 夜宵", note: "碳水主要作漏算预留", carbShare: 0.1, proteinShare: 0.2 },
-      ];
-    case "lateNight":
-      return [
-        { id: "breakfast", name: "早饭", note: "常规早餐", carbShare: 0.2, proteinShare: 0.2 },
-        { id: "lunch", name: "午饭", note: "其他餐", carbShare: 0.2, proteinShare: 0.2 },
-        { id: "dinner", name: "晚饭", note: "其他餐", carbShare: 0.2, proteinShare: 0.2 },
-        { id: "post", name: "夜间练后餐", note: "训练后的主要补给", carbShare: 0.3, proteinShare: 0.2 },
-        { id: "snack", name: "零食 / 夜宵", note: "碳水主要作漏算预留", carbShare: 0.1, proteinShare: 0.2 },
-      ];
-    default:
-      return REST_MEALS;
-  }
-}
-
-function standardTimedMeals(preName: string, postName: string, dinnerName: string, key: string): MealPreset[] {
-  // 训练落在午饭前后：无论真正的「午饭」在练前（afterLunch）还是练后（beforeLunch），
-  // 都用统一的 "lunch" ID，与休息日午饭共享记录；真正的加餐槽才用 pre / post。
-  const preIsLunch = key === "after-lunch";
-  return [
-    { id: "breakfast", name: "早饭", note: "常规早餐", carbShare: 0.2, proteinShare: 0.2 },
-    preIsLunch
-      ? { id: "lunch", name: preName, note: "只垫少量碳水", carbShare: 0.15, proteinShare: 0 }
-      : { id: "pre", name: preName, note: "只垫少量碳水", carbShare: 0.15, proteinShare: 0 },
-    preIsLunch
-      ? { id: "post", name: postName, note: "全天最大餐", carbShare: 0.35, proteinShare: 0.3 }
-      : { id: "lunch", name: postName, note: "全天最大餐", carbShare: 0.35, proteinShare: 0.3 },
-    { id: "dinner", name: dinnerName, note: preIsLunch ? "训练后的其他餐" : "其他餐", carbShare: 0.2, proteinShare: 0.3 },
-    { id: "snack", name: "零食 / 夜宵", note: "碳水主要作漏算预留", carbShare: 0.1, proteinShare: 0.2 },
-  ];
-}
-
-function mealRole(meal: MealPreset): MealRole {
-  if (meal.name.includes("零食") || meal.name.includes("夜宵")) return "snack";
-  if (meal.name.includes("练前")) return "pre";
-  if (meal.name.includes("练后")) return "post";
-  if (meal.name.includes("早饭")) return "breakfast";
-  return "regular";
-}
-
-function guideForMeal(meal: MealPreset, goal: Goal, dayType: DayType): MealGuide {
-  const role = mealRole(meal);
-  const leanMeatRule = "肉类只选瘦肉：无白色脂肪层的猪牛羊肉、去皮鸡鸭肉、鱼虾贝，或肝肾肚血。";
-  const avoidFattyMeat = "这些不算瘦肉：鸡鸭皮、排骨/大排、糖醋里脊、锅包肉、猪蹄、牛腩、牛排、肥牛肥羊、炸肉、午餐肉、肉肠、肉馅和肉丸。";
-  const avoidSugarFat = `${goal === "cut" ? "减脂期严格排除" : "增肌期也只偶尔吃"}糖油混合物：饼干、蛋糕、点心、甜品、油条、煎饼、手抓饼、葱油饼、花式面包和膨化食品。`;
-  const fatShortage = goal === "cut"
-    ? "若早饭不吃蛋黄牛奶，或午晚饭都吃低油无油菜，为避免脂肪不足，全天补30g坚果、或3个全蛋、或1盒全脂牛奶。"
-    : "若早饭不吃蛋黄牛奶，或午晚饭都吃低油无油菜，为避免脂肪不足，全天坚果需增至60g。";
-  if (role === "pre") return {
-    summary: "这不是正式一餐：只垫少量易消化碳水，吃到五六分饱即可开练。",
-    choices: ["香蕉：小根约20g、大根约30g碳水", "娃哈哈八宝粥：约30–47g碳水/罐", "旺仔小馒头：约37g碳水/袋", "脉动等运动饮料：约30g碳水/瓶"],
-    cautions: [
-      "练前餐不是正式一餐，只能吃到五六分饱；吃完不用专门等待，可以直接准备训练。",
-      "极端重要：练前脂肪不能吃，蛋白质也不用专门补；若刚好吃正餐，只搭配少量瘦肉。",
-      avoidFattyMeat,
-      avoidSugarFat,
-      "练前避开煎炒鸡蛋（含番茄炒蛋）、油烧茄子、干煸菜等吸油菜。",
-    ],
-  };
-  if (role === "post") return {
-    summary: "全天最大餐，最好练完后半小时内开始吃；先碳水和蛋白质。",
-    choices: ["高GI主食：一般米饭、馒头、花卷、熟面", "蛋白质：一般熟瘦肉、去皮禽肉、鱼虾贝", "来不及吃正餐：便携快碳 + 蛋白粉"],
-    cautions: [
-      "练后餐与一般正餐顺序相反：先吃碳水和蛋白质，蔬菜少吃、后吃，避免胰岛素被压制。",
-      leanMeatRule,
-      avoidFattyMeat,
-      avoidSugarFat,
-      "水果必须置换主食，不能在主食之外额外吃；水果10g碳水约置换30g熟米饭。",
-      "意面、燕麦麸皮等低GI或高纤主食，不作为练后主要碳水。",
-    ],
-  };
-  if (role === "snack") return {
-    summary: "预留的10%碳水用于抵扣牛奶、蔬菜和调料的漏算，不是让你再吃一份主食。",
-    choices: ["低糖牛肉干 / 鸡肉干", "鸡蛋、乳制品", "蔬菜、无糖饮料"],
-    cautions: [
-      "零食/夜宵设计热量不多，可以不吃；把额度分到其他正餐，多吃几口瘦肉或主食即可。",
-      "这10%的少量碳水是牛奶、蔬菜和调料的漏算预留，不用再专门吃面包、米面、奶茶或水果。",
-      avoidSugarFat,
-      "需要加餐时优先低糖瘦肉干、鸡蛋、乳制品、蔬菜或无糖饮料。",
-    ],
-  };
-  if (role === "breakfast") return {
-    summary: "早餐同时建立碳水、蛋白质和基础脂肪来源。",
-    choices: ["主食任选：米饭/粥、馒头、切片面包、燕麦、薯类", "蛋白质优先：鸡蛋 + 纯牛奶；或鸡蛋", "鸡蛋可水煮、茶叶蛋、蒸蛋羹"],
-    cautions: [
-      "鸡蛋可以水煮、做茶叶蛋或鸡蛋羹，但不能用油煎蛋替代。",
-      leanMeatRule,
-      goal === "gain" ? "增肌方案每天还要安排约30g坚果；不吃坚果时，可用米饭和瘦肉合计约100g置换。" : "减脂方案的基础脂肪来自早餐蛋黄牛奶和正餐带油瘦肉菜。",
-      fatShortage,
-      "一般餐先吃、多吃蔬菜，再吃碳水，有助于控制餐后反应。",
-    ],
-  };
-  return {
-    summary: dayType === "rest" ? "休息日正餐：主食配瘦肉，蔬菜先吃、多吃。" : "其他正餐：主食配瘦肉，蔬菜先吃、多吃。",
-    choices: ["主食：一般米饭、馒头、熟面、红薯、土豆、玉米", "瘦肉：去皮鸡鸭、无白色脂肪层的猪牛羊、鱼虾贝、肝肾肚血", "蔬菜不用定量，争取每天都吃"],
-    cautions: [
-      leanMeatRule,
-      avoidFattyMeat,
-      "水煮牛肉、毛血旺、口水鸡等重油菜，要先确认肉本身是瘦肉，再在盘边刮油或简单过水。",
-      avoidSugarFat,
-      "红薯、土豆、玉米、山药和芋头属于碳水主食，不算蔬菜。",
-      "一般正餐先吃、多吃蔬菜，再吃碳水；只有力训后的练后餐相反。",
-      fatShortage,
-    ],
-  };
-}
-
-const DEFAULT_PROFILE: Profile = {
-  sex: "male",
-  age: 27,
-  height: 180,
-  weight: 73,
-  goal: "cut",
-  timing: "beforeDinner",
-  level: "beginner",
-  cardioDaily: 100,
-};
-
-function strengthCalories(sex: Sex, level: Level) {
-  const table = sex === "male" ? [150, 200, 250] : [100, 150, 200];
-  return table[level === "beginner" ? 0 : level === "intermediate" ? 1 : 2];
-}
-
-function calculate(profile: Profile) {
-  const { sex, age, height, weight, goal, cardioDaily, level, timing } = profile;
-  const bmr = weight * 9.99 + height * 6.25 - age * 4.92 + (sex === "male" ? 5 : -161);
-  const base = bmr / 0.7;
-  const strength = timing === "none" ? 0 : strengthCalories(sex, level);
-  const trainMaintenance = base + strength + cardioDaily;
-  const restMaintenance = base + cardioDaily;
-  const factor = goal === "cut" ? 0.64 : 0.84;
-  const fat = goal === "cut" ? (weight >= 120 ? 70 : sex === "male" ? 60 : 50) : sex === "male" ? 80 : 70;
-  const trainingKcal = trainMaintenance * factor;
-  const restKcal = restMaintenance * factor;
-  const remaining = Math.max(0, trainingKcal - fat * 9);
-  const carbRatio = goal === "cut" ? 0.64 : 0.7;
-  const proteinRatio = 1 - carbRatio;
-  const protein = (remaining * proteinRatio) / 4;
-  const trainingCarbs = (remaining * carbRatio) / 4;
-  const restCarbs = Math.max(0, (restKcal - fat * 9 - protein * 4) / 4);
-  return { bmr, base, strength, trainMaintenance, restMaintenance, trainingKcal, restKcal, fat, protein, trainingCarbs, restCarbs };
-}
-
-function macroForFood(entry: FoodEntry): Macro {
-  const scale = entry.grams / 100;
-  return {
-    carbs: entry.per100.carbs * scale,
-    protein: entry.per100.protein * scale,
-    fat: entry.per100.fat * scale,
-    kcal: entry.per100.kcal * scale,
-  };
-}
-
-function sumMacros(entries: FoodEntry[]): Macro {
-  return entries.reduce(
-    (sum, entry) => {
-      const m = macroForFood(entry);
-      return { carbs: sum.carbs + m.carbs, protein: sum.protein + m.protein, fat: sum.fat + m.fat, kcal: sum.kcal + m.kcal };
-    },
-    { carbs: 0, protein: 0, fat: 0, kcal: 0 },
-  );
-}
-
-function foodNameKey(name: string) {
-  return name.toLowerCase()
-    .replace(/[（(][^）)]*[）)]/g, "")
-    .replace(/实际摄入|可食部|一般|蒸煮|清蒸|水煮|熟制|熟|生/g, "")
-    .replace(/[\s/·、_-]/g, "");
-}
-
-function matchingFood(ingredientName: string, foods: Food[]) {
-  const key = foodNameKey(ingredientName);
-  if (!key) return undefined;
-  return foods.find((food) => {
-    const foodKey = foodNameKey(food.name);
-    return foodKey === key || (Math.min(foodKey.length, key.length) >= 3 && (foodKey.includes(key) || key.includes(foodKey)));
-  });
-}
-
-function round(value: number, digits = 0) {
-  const p = 10 ** digits;
-  return Math.round(value * p) / p;
-}
-
-function todayString() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function shiftDate(date: string, days: number) {
-  const d = new Date(`${date}T12:00:00`);
-  d.setDate(d.getDate() + days);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-// 旧版本里真实餐次用了带练前/练后位置的 ID，导致切换训练日/休息日时记录互相不可见。
-// 统一为真实餐次 ID（breakfast/lunch/dinner）后，把旧数据一次性迁移过去。
-const LEGACY_MEAL_ID_MAP: Record<string, string> = {
-  "breakfast-pre": "breakfast",
-  "lunch-post": "lunch",
-  "dinner-post": "dinner",
-  "dinner-pre": "dinner",
-};
-
-function migrateDayLog(dayLog: DayLog): DayLog {
-  return Object.entries(dayLog).reduce<DayLog>((next, [mealId, entries]) => {
-    const target = LEGACY_MEAL_ID_MAP[mealId] ?? mealId;
-    next[target] = [...(next[target] || []), ...entries];
-    return next;
-  }, {});
-}
-
-function migrateDayLogs(logs: Record<string, DayLog>): Record<string, DayLog> {
-  return Object.fromEntries(
-    Object.entries(logs).map(([recordDate, dayLog]) => [recordDate, migrateDayLog(dayLog)]),
-  );
-}
-
-function migrateMetas(metas: Record<string, DayMeta>): Record<string, DayMeta> {
-  return Object.fromEntries(
-    Object.entries(metas).map(([recordDate, meta]) => [
-      recordDate,
-      {
-        ...meta,
-        meals: meta.meals.map((meal) => ({
-          ...meal,
-          id: LEGACY_MEAL_ID_MAP[meal.id] ?? meal.id,
-        })),
-      },
-    ]),
-  );
-}
+import {
+  DEFAULT_PROFILE,
+  EARLY_REST_MEALS,
+  FOODS,
+  PLAN_OPTIONS,
+  REST_MEALS,
+  applyIngredientEdit,
+  calculate,
+  foodNameKey,
+  getRecommendation,
+  guideForMeal,
+  macroForFood,
+  matchingFood,
+  migrateDayLogs,
+  migrateMetas,
+  round,
+  shiftDate,
+  sumMacros,
+  targetForMeal,
+  todayString,
+  trainingMeals,
+  type AiEstimate,
+  type AiIngredient,
+  type DayLog,
+  type DayMeta,
+  type DayType,
+  type Food,
+  type FoodEntry,
+  type Goal,
+  type Level,
+  type Macro,
+  type MealPreset,
+  type Profile,
+  type Sex,
+  type SyncStatus,
+  type Timing,
+} from "@diet/domain";
 
 function Progress({ label, value, target, color }: { label: string; value: number; target: number; color: string }) {
   const pct = target > 0 ? (value / target) * 100 : value > 0 ? 120 : 0;
@@ -397,46 +51,6 @@ function Progress({ label, value, target, color }: { label: string; value: numbe
       <div className="progress-track"><span style={{ width: `${Math.min(pct, 100)}%`, background: over ? "var(--red)" : color }} /></div>
     </div>
   );
-}
-
-function getRecommendation(target: Macro, total: Macro, meal: MealPreset) {
-  const remain = {
-    carbs: target.carbs - total.carbs,
-    protein: target.protein - total.protein,
-    fat: target.fat - total.fat,
-  };
-  if (remain.carbs < -5 || remain.protein < -5 || remain.fat < -4) {
-    return { text: "本餐已有指标超出，接下来优先选择无油蔬菜或停止加餐。", foodId: "broccoli", grams: 150 };
-  }
-  const role = mealRole(meal);
-  if (role === "snack") {
-    if (remain.protein > 10) {
-      const food = FOODS.find((f) => f.id === "jerky")!;
-      return { text: `本次加餐不再补主食；若确实饿，可用约 ${round((remain.protein / food.protein) * 100)}g 低糖瘦肉干补蛋白质。`, foodId: food.id, grams: round((remain.protein / food.protein) * 100) };
-    }
-    return { text: "这餐的碳水是漏算预留，不必吃满；可选鸡蛋、乳制品、蔬菜或无糖饮料。", foodId: "egg", grams: 50 };
-  }
-  if (role === "pre") {
-    if (remain.carbs > 8) {
-      const food = FOODS.find((f) => f.id === "banana")!;
-      return { text: `练前只垫碳水：可吃约 ${round((remain.carbs / food.carbs) * 100)}g 香蕉，五六分饱即可，不必补蛋白质和脂肪。`, foodId: food.id, grams: round((remain.carbs / food.carbs) * 100) };
-    }
-    return { text: "练前碳水已接近目标，不要为了吃满而继续加餐，准备训练即可。", foodId: "banana", grams: 80 };
-  }
-  if (remain.protein > 10) {
-    if (role === "breakfast") {
-      const eggs = Math.max(1, Math.ceil(remain.protein / 6));
-      return { text: `早餐还差约 ${round(remain.protein)}g 蛋白质，可安排约 ${eggs} 个全蛋；也可用鸡蛋加纯牛奶组合。`, foodId: "egg", grams: eggs * 50 };
-    }
-    const food = FOODS.find((f) => f.id === "chicken")!;
-    return { text: `${role === "post" ? "练后优先补足" : "还差约"} ${round(remain.protein)}g 蛋白质，可选约 ${round((remain.protein / food.protein) * 100)}g 一般熟瘦肉。`, foodId: food.id, grams: round((remain.protein / food.protein) * 100) };
-  }
-  if (remain.carbs > 12) {
-    const food = FOODS.find((f) => f.id === (role === "breakfast" ? "oats" : "rice"))!;
-    const amount = round((remain.carbs / food.carbs) * 100);
-    return { text: role === "post" ? `练后还差约 ${round(remain.carbs)}g 碳水，可补 ${amount}g 一般熟米饭；水果不能作为主要来源。` : `还差约 ${round(remain.carbs)}g 碳水，可选约 ${amount}g ${food.name}。`, foodId: food.id, grams: amount };
-  }
-  return { text: role === "post" ? "练后餐已接近目标；如吃蔬菜，请少吃、后吃。" : "本餐已经接近目标，先吃、多吃蔬菜即可。", foodId: "broccoli", grams: 150 };
 }
 
 function PlanGuidance({ profile, dayType, bmi, planLabel }: { profile: Profile; dayType: DayType; bmi: number; planLabel: string }) {
@@ -546,27 +160,9 @@ function AiFoodAnalyzer({ foods, onSaveMany }: { foods: Food[]; onSaveMany: (foo
   function updateIngredient(index: number, key: keyof AiIngredient, value: string | number) {
     setEstimate((current) => {
       if (!current) return current;
-      const ingredients = current.ingredients.map((ingredient, itemIndex) => {
-        if (itemIndex !== index) return ingredient;
-        if (key === "name") return { ...ingredient, name: String(value) };
-        const numericValue = Math.max(0, Number(value) || 0);
-        if (key === "grams") {
-          const ratio = ingredient.grams > 0 ? numericValue / ingredient.grams : 1;
-          return {
-            ...ingredient,
-            grams: numericValue,
-            carbs: round(ingredient.carbs * ratio, 2),
-            protein: round(ingredient.protein * ratio, 2),
-            fat: round(ingredient.fat * ratio, 2),
-            kcal: round(ingredient.kcal * ratio, 1),
-          };
-        }
-        const updated = { ...ingredient, [key]: numericValue } as AiIngredient;
-        if (key === "carbs" || key === "protein" || key === "fat") {
-          updated.kcal = round(updated.carbs * 4 + updated.protein * 4 + updated.fat * 9, 1);
-        }
-        return updated;
-      });
+      const ingredients = current.ingredients.map((ingredient, itemIndex) =>
+        itemIndex === index ? applyIngredientEdit(ingredient, key, value) : ingredient,
+      );
       const sum = (macro: keyof Macro | "grams") => ingredients.reduce((total, ingredient) => total + Number(ingredient[macro] || 0), 0);
       return { ...current, ingredients, grams: sum("grams"), carbs: sum("carbs"), protein: sum("protein"), fat: sum("fat"), kcal: sum("kcal") };
     });
@@ -1069,12 +665,7 @@ export default function Home() {
 
         <section className="meal-grid">
           {meals.map((meal) => {
-            const target = {
-              carbs: dailyTarget.carbs * meal.carbShare,
-              protein: dailyTarget.protein * meal.proteinShare,
-              fat: dailyTarget.fat * meal.proteinShare,
-              kcal: dailyTarget.kcal * ((meal.carbShare + meal.proteinShare) / 2),
-            };
+            const target = targetForMeal(dailyTarget, meal);
             return <MealCard key={meal.id} meal={meal} target={target} entries={dateLog[meal.id] || []} foods={availableFoods} goal={profile.goal} dayType={effectiveDayType} onAdd={(entry) => addEntry(meal.id, entry)} onRemove={(id) => removeEntry(meal.id, id)} />;
           })}
         </section>
