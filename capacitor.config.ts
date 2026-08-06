@@ -3,7 +3,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 const config: CapacitorConfig = {
   appId: "cn.mealmeter.app",
   appName: "餐标",
-  webDir: "capacitor-shell",
+  webDir: "apps/native/capacitor-shell",
   ios: {
     contentInset: "automatic",
     preferredContentMode: "mobile",

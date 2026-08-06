@@ -18,7 +18,7 @@ yarn-error.log*
 
 # --- Node ---
 node_modules/
-server/node_modules/
+services/server/node_modules/
 *.tsbuildinfo
 .pnp
 .pnp.*
@@ -29,10 +29,11 @@ server/node_modules/
 !.yarn/versions
 next-env.d.ts
 
-# --- Data / large binaries (personal data workbooks, not code) ---
+# --- Data / personal workbooks (gitignored workspace files) ---
 *.xlsx
+data/
 
-# --- Build output / generated ---
+# --- Build output / generated (web build stays at root) ---
 .next/
 .vinext/
 .wrangler/
@@ -41,15 +42,16 @@ out/
 outputs/
 work/
 coverage/
-capacitor-shell/
-ios/App/App/public/
-ios/App/Pods/
-ios/build/
-ios/DerivedData/
-android/
 .vercel
 *-preview.png
-releases/
+
+# --- Native (apps/native) build output ---
+apps/native/capacitor-shell/
+apps/native/ios/App/App/public/
+apps/native/ios/App/Pods/
+apps/native/ios/build/
+apps/native/ios/DerivedData/
+apps/native/android/
 
 # --- Claude Code tool config (personal, not shared with team) ---
 .claude/
