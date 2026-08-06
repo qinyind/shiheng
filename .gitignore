@@ -1,0 +1,34 @@
+# --- OS ---
+.DS_Store
+Thumbs.db
+*.swp
+
+# --- Logs ---
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# --- Env / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Node ---
+node_modules/
+*.tsbuildinfo
+
+# --- Data / large binaries (personal data workbooks, not code) ---
+*.xlsx
+
+# --- Build output (webapp, kept for when webapp/ is merged into this repo;
+#     while webapp/ stays an embedded repo its own .gitignore governs these) ---
+webapp/.next/
+webapp/dist/
+webapp/.wrangler/
+webapp/capacitor-shell/
+webapp/ios/App/App/public/
+webapp/ios/App/Pods/
+webapp/ios/build/
+webapp/ios/DerivedData/
+webapp/android/
+webapp/releases/
