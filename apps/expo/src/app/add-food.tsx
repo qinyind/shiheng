@@ -14,13 +14,14 @@ export default function AddFoodScreen() {
   const { mealID } = useLocalSearchParams<{ mealID: string }>();
   const mealId = typeof mealID === "string" ? mealID : "";
 
-  const meals = useMealStore((state) => mealsFor(state));
-  const target = useMealStore((state) => dailyTarget(state));
-  const foods = useMealStore((state) => availableFoods(state));
-  const entries = useMealStore((state) =>
-    mealId ? state.entries.filter((entry) => entry.dateKey === state.selectedDate && entry.mealID === mealId) : [],
-  );
-  const addFood = useMealStore((state) => state.addFood);
+  // 派生选择器（mealsFor/dailyTarget/availableFoods）每次调用都返回新引用，
+  // 不能直接当 Zustand selector 用（getSnapshot 不稳定 → 无限重渲染 React #185）。
+  // 与 index.tsx 一致：订阅整个 store，再以普通函数派生。
+  const store = useMealStore();
+  const meals = mealsFor(store);
+  const target = dailyTarget(store);
+  const foods = availableFoods(store);
+  const entries = mealId ? store.entries.filter((entry) => entry.dateKey === store.selectedDate && entry.mealID === mealId) : [];
 
   const meal = meals.find((item) => item.id === mealId) ?? meals[0];
   const mealTarget = targetForMeal(target, meal);
@@ -60,11 +61,11 @@ export default function AddFoodScreen() {
     const gramsValue = Number(grams);
     if (!gramsValue || gramsValue <= 0) return;
     if (selectedId === CUSTOM_ID) {
-      addFood({ id: "custom", name: custom.name || "自定义食物", category: "自定义", per100: customPer100() }, gramsValue, mealId);
+      store.addFood({ id: "custom", name: custom.name || "自定义食物", category: "自定义", per100: customPer100() }, gramsValue, mealId);
     } else {
       const food = foods.find((item) => item.id === selectedId);
       if (!food) return;
-      addFood(
+      store.addFood(
         { id: food.id, name: food.name, category: food.category, per100: { carbs: food.carbs, protein: food.protein, fat: food.fat, kcal: food.kcal } },
         gramsValue,
         mealId,

@@ -15,9 +15,11 @@ export default function AiAnalyzeScreen() {
   const mealParam = typeof mealID === "string" ? mealID : "";
 
   const serverURL = useMealStore((state) => state.serverURL);
-  const foods = useMealStore((state) => availableFoods(state));
-  const meals = useMealStore((state) => mealsFor(state));
   const addEstimate = useMealStore((state) => state.addEstimate);
+  // availableFoods/mealsFor 每次返回新引用，不能当 selector；订阅整 store 后以普通函数派生。
+  const store = useMealStore();
+  const foods = availableFoods(store);
+  const meals = mealsFor(store);
 
   const [selectedMealId, setSelectedMealId] = useState(mealParam || meals[0]?.id || "");
 
