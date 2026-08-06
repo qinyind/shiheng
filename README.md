@@ -4,16 +4,20 @@
 
 ## 项目结构
 
-- `ios/App`：纯 SwiftUI 原生 iOS 客户端，离线优先，历史保存在本机；可选连接自建服务器。
-- `server`：Node.js + Fastify + PostgreSQL API，Docker Compose 部署，提供设备配对、跨设备同步和 AI 识餐。
-- `app`：现有 Web 版本，可独立构建和使用；不再作为 iOS 客户端界面。
+- `apps/expo`：Expo / React Native 前端，一套代码库覆盖 Web + iOS + Android（react-native-web 渲染 Web），离线优先，可选连接自建服务器同步。
+- `packages/domain`：共享领域逻辑（指标计算、餐次方案、同步合并、迁移），Web 与原生共用。
+- `services/server`：Node.js + Fastify + PostgreSQL API，提供设备配对、跨设备同步和 AI 识餐。
+- `packages/db`：Drizzle 迁移配置。
 
-## 验证命令
+## 验证命令（在仓库根目录）
 
 ```bash
-npm test
-npm --prefix server test
-docker build -t meal-meter-server:test server
+npm run dev        # Expo Metro（Web: http://localhost:8081）
+npm run build      # expo export --platform web
+npm test           # packages/domain 单测 + 覆盖率
+npm run test:expo  # Expo 类型检查
+npm run test:server
+npm run lint
 ```
 
-服务器上线步骤见 `server/README.md`，原生端构建见 `IOS_BUILD.md`。
+服务器上线步骤见 `services/server/README.md`，iOS 构建说明见 `docs/IOS_BUILD.md`。

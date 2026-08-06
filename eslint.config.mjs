@@ -1,17 +1,19 @@
 import { defineConfig, globalIgnores } from "eslint/config";
-import nextVitals from "eslint-config-next/core-web-vitals";
-import nextTs from "eslint-config-next/typescript";
+import tseslint from "typescript-eslint";
 
+// Next/vinext 栈已删除（Web 入口由 apps/expo 接管），不再依赖 eslint-config-next。
 const eslintConfig = defineConfig([
-  ...nextVitals,
-  ...nextTs,
-  // Override default ignores of eslint-config-next.
+  ...tseslint.configs.recommended,
   globalIgnores([
-    // Default ignores of eslint-config-next:
+    "dist/**",
     ".next/**",
     "out/**",
     "build/**",
-    "next-env.d.ts",
+    "coverage/**",
+    "apps/native/capacitor-shell/**",
+    "apps/native/ios/App/App/public/**",
+    "apps/native/ios/**",
+    "apps/expo/**",
   ]),
 ]);
 
