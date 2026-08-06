@@ -32,3 +32,6 @@ webapp/ios/build/
 webapp/ios/DerivedData/
 webapp/android/
 webapp/releases/
+
+# --- Claude Code tool config (personal, not shared with team) ---
+.claude/
