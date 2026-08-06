@@ -1,4 +1,4 @@
-import type { Food, MealPreset, Profile } from "./types.ts";
+import type { Food, Goal, MealPreset, Profile, Timing } from "./types.ts";
 
 export const FOODS: Food[] = [
   { id: "rice", name: "熟米饭", category: "主食", carbs: 30, protein: 2.6, fat: 0.3, kcal: 133 },
