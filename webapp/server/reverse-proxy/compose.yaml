@@ -1,0 +1,38 @@
+services:
+  gateway:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      MEAL_METER_UPSTREAM: ${MEAL_METER_UPSTREAM:-127.0.0.1:18080}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certbot/www:/var/www/certbot:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - gateway_data:/data
+      - gateway_config:/config
+    mem_limit: 96m
+    cpus: 0.5
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  certbot:
+    image: certbot/certbot:v5.4.0
+    profiles: ["maintenance"]
+    volumes:
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  gateway_data:
+  gateway_config:
