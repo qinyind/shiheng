@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getD1 } from "../../../db";
+import { getD1 } from "../../../packages/db";
 import { getChatGPTUser } from "../../chatgpt-auth";
 
 const MAX_STATE_BYTES = 2_000_000;
