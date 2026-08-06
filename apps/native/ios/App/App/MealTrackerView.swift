@@ -217,7 +217,7 @@ private func foodNameKey(_ name: String) -> String {
 struct FoodEntry: Identifiable, Codable, Hashable {
     let id: UUID
     let dateKey: String
-    let mealID: String
+    var mealID: String
     let foodName: String
     let grams: Double
     let per100: Macro
@@ -271,7 +271,7 @@ final class MealStore: ObservableObject {
         guard let data = UserDefaults.standard.data(forKey: storageKey),
               let state = try? JSONDecoder().decode(SavedState.self, from: data) else { return }
         profile = state.profile
-        entries = state.entries
+        entries = migratedEntries(state.entries, timing: profile.timing)
         customFoods = state.customFoods
         dayTypes = state.dayTypes
         deletedEntryIDs = state.deletedEntryIDs ?? []
@@ -313,6 +313,36 @@ final class MealStore: ObservableObject {
                      protein: daily.protein * meal.proteinShare,
                      fat: daily.fat * meal.proteinShare,
                      kcal: daily.kcal * ((meal.carbShare + meal.proteinShare) / 2))
+    }
+
+    // 旧版本训练日用 a/b/c/d、other、pre、post 作为餐次 ID，切换训练日/休息日后记录互相不可见。
+    // 新版本真实餐次统一为 breakfast/lunch/dinner/snack，这里按当前方案把旧 ID 迁移过去。
+    private func legacyMealIDMap(for timing: TrainingTiming) -> [String: String] {
+        var map: [String: String]
+        switch timing {
+        case .breakfastEarly: map = ["a": "breakfast", "b": "post", "c": "lunch", "d": "dinner"]
+        case .breakfastLate: map = ["a": "breakfast", "b": "lunch", "c": "dinner"]
+        case .beforeLunch: map = ["post": "lunch", "other": "dinner"]
+        case .afterLunch: map = ["pre": "lunch", "other": "dinner"]
+        case .beforeDinner: map = ["other": "lunch", "post": "dinner"]
+        case .afterDinner: map = ["pre": "dinner", "other": "lunch"]
+        case .lateNight: map = ["a": "breakfast", "b": "lunch", "c": "dinner", "d": "post"]
+        case .none: map = [:]
+        }
+        // 当前方案无法判定的旧 ID，用跨方案稳定的兜底映射。
+        if map["a"] == nil { map["a"] = "breakfast" }
+        if map["c"] == nil { map["c"] = "dinner" }
+        return map
+    }
+
+    private func migratedEntries(_ entries: [FoodEntry], timing: TrainingTiming) -> [FoodEntry] {
+        let map = legacyMealIDMap(for: timing)
+        return entries.map { entry in
+            guard let target = map[entry.mealID] else { return entry }
+            var migrated = entry
+            migrated.mealID = target
+            return migrated
+        }
     }
 
     func add(food: Food, grams: Double, mealID: String) {
@@ -437,59 +467,62 @@ final class MealStore: ObservableObject {
     }
 
     func mealPresets(for type: DayType) -> [MealPreset] {
-        if type == .rest {
-            return [
-                MealPreset(id: "breakfast", name: "早饭", note: "稳定开启一天", carbShare: 0.20, proteinShare: 0.20),
-                MealPreset(id: "lunch", name: "午饭", note: "常规正餐", carbShare: 0.35, proteinShare: 0.30),
-                MealPreset(id: "dinner", name: "晚饭", note: "常规正餐", carbShare: 0.35, proteinShare: 0.30),
-                MealPreset(id: "snack", name: "零食 / 夜宵", note: "为漏算预留", carbShare: 0.10, proteinShare: 0.20)
-            ]
-        }
+        if type == .rest { return Self.restMeals }
         switch profile.timing {
         case .breakfastEarly:
-            return fiveMeals("早饭 · 练前", "练后餐", "午饭", "晚饭", 0.15, 0.35, 0.20, 0.20)
+            return [MealPreset(id: "breakfast", name: "早饭 · 练前", note: "少量、易消化", carbShare: 0.15, proteinShare: 0.20),
+                    MealPreset(id: "post", name: "练后餐", note: "全天最大餐", carbShare: 0.35, proteinShare: 0.20),
+                    MealPreset(id: "lunch", name: "午饭", note: "其他餐", carbShare: 0.20, proteinShare: 0.20),
+                    MealPreset(id: "dinner", name: "晚饭", note: "其他餐", carbShare: 0.20, proteinShare: 0.20),
+                    Self.snackPreset]
         case .breakfastLate:
-            return fourMeals("早饭 · 练前", "午饭 · 练后", "晚饭", 0.20, 0.40, 0.30)
+            return [MealPreset(id: "breakfast", name: "早饭 · 练前", note: "训练前主餐", carbShare: 0.20, proteinShare: 0.20),
+                    MealPreset(id: "lunch", name: "午饭 · 练后", note: "全天最大餐", carbShare: 0.40, proteinShare: 0.30),
+                    MealPreset(id: "dinner", name: "晚饭", note: "其他餐", carbShare: 0.30, proteinShare: 0.30),
+                    Self.snackPreset]
         case .beforeLunch:
-            return standardMeals(pre: "练前餐", post: "午饭 · 练后", other: "晚饭")
+            return [MealPreset(id: "breakfast", name: "早饭", note: "常规早餐", carbShare: 0.20, proteinShare: 0.20),
+                    MealPreset(id: "pre", name: "练前餐", note: "只垫少量碳水", carbShare: 0.15, proteinShare: 0),
+                    MealPreset(id: "lunch", name: "午饭 · 练后", note: "全天最大餐", carbShare: 0.35, proteinShare: 0.30),
+                    MealPreset(id: "dinner", name: "晚饭", note: "其他餐", carbShare: 0.20, proteinShare: 0.30),
+                    Self.snackPreset]
         case .afterLunch:
-            return standardMeals(pre: "午饭 · 练前", post: "练后餐", other: "晚饭")
+            return [MealPreset(id: "breakfast", name: "早饭", note: "常规早餐", carbShare: 0.20, proteinShare: 0.20),
+                    MealPreset(id: "lunch", name: "午饭 · 练前", note: "只垫少量碳水", carbShare: 0.15, proteinShare: 0),
+                    MealPreset(id: "post", name: "练后餐", note: "全天最大餐", carbShare: 0.35, proteinShare: 0.30),
+                    MealPreset(id: "dinner", name: "晚饭", note: "其他餐", carbShare: 0.20, proteinShare: 0.30),
+                    Self.snackPreset]
         case .beforeDinner:
-            return standardMeals(pre: "练前餐", post: "晚饭 · 练后", other: "午饭", otherBeforePre: true)
+            return [MealPreset(id: "breakfast", name: "早饭", note: "常规早餐", carbShare: 0.20, proteinShare: 0.20),
+                    MealPreset(id: "lunch", name: "午饭", note: "其他餐", carbShare: 0.20, proteinShare: 0.30),
+                    MealPreset(id: "pre", name: "练前餐", note: "只垫少量碳水", carbShare: 0.15, proteinShare: 0),
+                    MealPreset(id: "dinner", name: "晚饭 · 练后", note: "全天最大餐", carbShare: 0.35, proteinShare: 0.30),
+                    Self.snackPreset]
         case .afterDinner:
-            return standardMeals(pre: "晚饭 · 练前", post: "练后餐", other: "午饭", otherBeforePre: true)
+            return [MealPreset(id: "breakfast", name: "早饭", note: "常规早餐", carbShare: 0.20, proteinShare: 0.20),
+                    MealPreset(id: "lunch", name: "午饭", note: "其他餐", carbShare: 0.20, proteinShare: 0.30),
+                    MealPreset(id: "dinner", name: "晚饭 · 练前", note: "控制到五六分饱", carbShare: 0.15, proteinShare: 0),
+                    MealPreset(id: "post", name: "练后餐", note: "补充碳水和蛋白质", carbShare: 0.35, proteinShare: 0.30),
+                    Self.snackPreset]
         case .lateNight:
-            return fiveMeals("早饭", "午饭", "晚饭", "夜间练后餐", 0.20, 0.20, 0.20, 0.30)
+            return [MealPreset(id: "breakfast", name: "早饭", note: "常规早餐", carbShare: 0.20, proteinShare: 0.20),
+                    MealPreset(id: "lunch", name: "午饭", note: "其他餐", carbShare: 0.20, proteinShare: 0.20),
+                    MealPreset(id: "dinner", name: "晚饭", note: "其他餐", carbShare: 0.20, proteinShare: 0.20),
+                    MealPreset(id: "post", name: "夜间练后餐", note: "训练后的主要补给", carbShare: 0.30, proteinShare: 0.20),
+                    Self.snackPreset]
         case .none:
-            return mealPresets(for: .rest)
+            return Self.restMeals
         }
     }
 
-    private func standardMeals(pre: String, post: String, other: String, otherBeforePre: Bool = false) -> [MealPreset] {
-        let first = MealPreset(id: "breakfast", name: "早饭", note: "常规早餐", carbShare: 0.20, proteinShare: 0.20)
-        let preMeal = MealPreset(id: "pre", name: pre, note: "只垫少量碳水", carbShare: 0.15, proteinShare: 0)
-        let postMeal = MealPreset(id: "post", name: post, note: "全天最大餐", carbShare: 0.35, proteinShare: 0.30)
-        let otherMeal = MealPreset(id: "other", name: other, note: "其他餐", carbShare: 0.20, proteinShare: 0.30)
-        let snack = MealPreset(id: "snack", name: "零食 / 夜宵", note: "为漏算预留", carbShare: 0.10, proteinShare: 0.20)
-        return otherBeforePre ? [first, otherMeal, preMeal, postMeal, snack] : [first, preMeal, postMeal, otherMeal, snack]
-    }
+    private static let snackPreset = MealPreset(id: "snack", name: "零食 / 夜宵", note: "为漏算预留", carbShare: 0.10, proteinShare: 0.20)
 
-    private func fiveMeals(_ a: String, _ b: String, _ c: String, _ d: String,
-                           _ aShare: Double, _ bShare: Double, _ cShare: Double, _ dShare: Double) -> [MealPreset] {
-        [MealPreset(id: "a", name: a, note: "按训练安排", carbShare: aShare, proteinShare: 0.20),
-         MealPreset(id: "b", name: b, note: "按训练安排", carbShare: bShare, proteinShare: 0.20),
-         MealPreset(id: "c", name: c, note: "其他餐", carbShare: cShare, proteinShare: 0.20),
-         MealPreset(id: "d", name: d, note: "其他餐", carbShare: dShare, proteinShare: 0.20),
-         MealPreset(id: "snack", name: "零食 / 夜宵", note: "为漏算预留", carbShare: 0.10, proteinShare: 0.20)]
-    }
-
-    private func fourMeals(_ a: String, _ b: String, _ c: String,
-                           _ aShare: Double, _ bShare: Double, _ cShare: Double) -> [MealPreset] {
-        [MealPreset(id: "a", name: a, note: "训练前主餐", carbShare: aShare, proteinShare: 0.20),
-         MealPreset(id: "b", name: b, note: "全天最大餐", carbShare: bShare, proteinShare: 0.30),
-         MealPreset(id: "c", name: c, note: "其他餐", carbShare: cShare, proteinShare: 0.30),
-         MealPreset(id: "snack", name: "零食 / 夜宵", note: "为漏算预留", carbShare: 0.10, proteinShare: 0.20)]
-    }
+    private static let restMeals: [MealPreset] = [
+        MealPreset(id: "breakfast", name: "早饭", note: "稳定开启一天", carbShare: 0.20, proteinShare: 0.20),
+        MealPreset(id: "lunch", name: "午饭", note: "常规正餐", carbShare: 0.35, proteinShare: 0.30),
+        MealPreset(id: "dinner", name: "晚饭", note: "常规正餐", carbShare: 0.35, proteinShare: 0.30),
+        MealPreset(id: "snack", name: "零食 / 夜宵", note: "为漏算预留", carbShare: 0.10, proteinShare: 0.20)
+    ]
 
     private func save() {
         let state = snapshot()
@@ -507,7 +540,7 @@ final class MealStore: ObservableObject {
         deletedEntryIDs = state.deletedEntryIDs ?? []
         deletedFoodIDs = state.deletedFoodIDs ?? []
         profile = state.profile
-        entries = state.entries.filter { !deletedEntryIDs.contains($0.id) }
+        entries = migratedEntries(state.entries.filter { !deletedEntryIDs.contains($0.id) }, timing: profile.timing)
         customFoods = state.customFoods.filter { !deletedFoodIDs.contains($0.id) }
         dayTypes = state.dayTypes
         save()

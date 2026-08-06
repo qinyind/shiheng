@@ -121,7 +121,7 @@ function trainingMeals(timing: Timing): MealPreset[] {
   switch (timing) {
     case "breakfastEarly":
       return [
-        { id: "breakfast-pre", name: "早饭 · 练前", note: "少量、易消化", carbShare: 0.15, proteinShare: 0.2 },
+        { id: "breakfast", name: "早饭 · 练前", note: "少量、易消化", carbShare: 0.15, proteinShare: 0.2 },
         { id: "post", name: "练后餐", note: "全天最大餐", carbShare: 0.35, proteinShare: 0.2 },
         { id: "lunch", name: "午饭", note: "其他餐", carbShare: 0.2, proteinShare: 0.2 },
         { id: "dinner", name: "晚饭", note: "其他餐", carbShare: 0.2, proteinShare: 0.2 },
@@ -129,8 +129,8 @@ function trainingMeals(timing: Timing): MealPreset[] {
       ];
     case "breakfastLate":
       return [
-        { id: "breakfast-pre", name: "早饭 · 练前", note: "训练前主餐", carbShare: 0.2, proteinShare: 0.2 },
-        { id: "lunch-post", name: "午饭 · 练后", note: "全天最大餐", carbShare: 0.4, proteinShare: 0.3 },
+        { id: "breakfast", name: "早饭 · 练前", note: "训练前主餐", carbShare: 0.2, proteinShare: 0.2 },
+        { id: "lunch", name: "午饭 · 练后", note: "全天最大餐", carbShare: 0.4, proteinShare: 0.3 },
         { id: "dinner", name: "晚饭", note: "其他餐", carbShare: 0.3, proteinShare: 0.3 },
         { id: "snack", name: "零食 / 夜宵", note: "碳水主要作漏算预留", carbShare: 0.1, proteinShare: 0.2 },
       ];
@@ -143,14 +143,14 @@ function trainingMeals(timing: Timing): MealPreset[] {
         { id: "breakfast", name: "早饭", note: "常规早餐", carbShare: 0.2, proteinShare: 0.2 },
         { id: "lunch", name: "午饭", note: "其他餐", carbShare: 0.2, proteinShare: 0.3 },
         { id: "pre", name: "练前餐", note: "只垫少量碳水", carbShare: 0.15, proteinShare: 0 },
-        { id: "dinner-post", name: "晚饭 · 练后", note: "全天最大餐", carbShare: 0.35, proteinShare: 0.3 },
+        { id: "dinner", name: "晚饭 · 练后", note: "全天最大餐", carbShare: 0.35, proteinShare: 0.3 },
         { id: "snack", name: "零食 / 夜宵", note: "碳水主要作漏算预留", carbShare: 0.1, proteinShare: 0.2 },
       ];
     case "afterDinner":
       return [
         { id: "breakfast", name: "早饭", note: "常规早餐", carbShare: 0.2, proteinShare: 0.2 },
         { id: "lunch", name: "午饭", note: "其他餐", carbShare: 0.2, proteinShare: 0.3 },
-        { id: "dinner-pre", name: "晚饭 · 练前", note: "控制到五六分饱", carbShare: 0.15, proteinShare: 0 },
+        { id: "dinner", name: "晚饭 · 练前", note: "控制到五六分饱", carbShare: 0.15, proteinShare: 0 },
         { id: "post", name: "练后餐", note: "补充碳水和蛋白质", carbShare: 0.35, proteinShare: 0.3 },
         { id: "snack", name: "零食 / 夜宵", note: "碳水主要作漏算预留", carbShare: 0.1, proteinShare: 0.2 },
       ];
@@ -168,11 +168,17 @@ function trainingMeals(timing: Timing): MealPreset[] {
 }
 
 function standardTimedMeals(preName: string, postName: string, dinnerName: string, key: string): MealPreset[] {
+  // 训练落在午饭前后：无论真正的「午饭」在练前（afterLunch）还是练后（beforeLunch），
+  // 都用统一的 "lunch" ID，与休息日午饭共享记录；真正的加餐槽才用 pre / post。
   const preIsLunch = key === "after-lunch";
   return [
     { id: "breakfast", name: "早饭", note: "常规早餐", carbShare: 0.2, proteinShare: 0.2 },
-    { id: "pre", name: preName, note: "只垫少量碳水", carbShare: 0.15, proteinShare: 0 },
-    { id: "post", name: postName, note: "全天最大餐", carbShare: 0.35, proteinShare: 0.3 },
+    preIsLunch
+      ? { id: "lunch", name: preName, note: "只垫少量碳水", carbShare: 0.15, proteinShare: 0 }
+      : { id: "pre", name: preName, note: "只垫少量碳水", carbShare: 0.15, proteinShare: 0 },
+    preIsLunch
+      ? { id: "post", name: postName, note: "全天最大餐", carbShare: 0.35, proteinShare: 0.3 }
+      : { id: "lunch", name: postName, note: "全天最大餐", carbShare: 0.35, proteinShare: 0.3 },
     { id: "dinner", name: dinnerName, note: preIsLunch ? "训练后的其他餐" : "其他餐", carbShare: 0.2, proteinShare: 0.3 },
     { id: "snack", name: "零食 / 夜宵", note: "碳水主要作漏算预留", carbShare: 0.1, proteinShare: 0.2 },
   ];
@@ -339,6 +345,44 @@ function shiftDate(date: string, days: number) {
   const d = new Date(`${date}T12:00:00`);
   d.setDate(d.getDate() + days);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// 旧版本里真实餐次用了带练前/练后位置的 ID，导致切换训练日/休息日时记录互相不可见。
+// 统一为真实餐次 ID（breakfast/lunch/dinner）后，把旧数据一次性迁移过去。
+const LEGACY_MEAL_ID_MAP: Record<string, string> = {
+  "breakfast-pre": "breakfast",
+  "lunch-post": "lunch",
+  "dinner-post": "dinner",
+  "dinner-pre": "dinner",
+};
+
+function migrateDayLog(dayLog: DayLog): DayLog {
+  return Object.entries(dayLog).reduce<DayLog>((next, [mealId, entries]) => {
+    const target = LEGACY_MEAL_ID_MAP[mealId] ?? mealId;
+    next[target] = [...(next[target] || []), ...entries];
+    return next;
+  }, {});
+}
+
+function migrateDayLogs(logs: Record<string, DayLog>): Record<string, DayLog> {
+  return Object.fromEntries(
+    Object.entries(logs).map(([recordDate, dayLog]) => [recordDate, migrateDayLog(dayLog)]),
+  );
+}
+
+function migrateMetas(metas: Record<string, DayMeta>): Record<string, DayMeta> {
+  return Object.fromEntries(
+    Object.entries(metas).map(([recordDate, meta]) => [
+      recordDate,
+      {
+        ...meta,
+        meals: meta.meals.map((meal) => ({
+          ...meal,
+          id: LEGACY_MEAL_ID_MAP[meal.id] ?? meal.id,
+        })),
+      },
+    ]),
+  );
 }
 
 function Progress({ label, value, target, color }: { label: string; value: number; target: number; color: string }) {
@@ -746,8 +790,8 @@ export default function Home() {
         const parsed = JSON.parse(stored);
         // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate persisted device state once on mount
         if (parsed.profile) setProfile(parsed.profile);
-        if (parsed.logs) setLogs(parsed.logs);
-        if (parsed.metas) setMetas(parsed.metas);
+        if (parsed.logs) setLogs(migrateDayLogs(parsed.logs));
+        if (parsed.metas) setMetas(migrateMetas(parsed.metas));
         if (Array.isArray(parsed.customFoods)) setCustomFoods(parsed.customFoods);
         lastModifiedRef.current = Number(parsed.updatedAt) || 0;
       }
@@ -782,8 +826,8 @@ export default function Home() {
         const serverTime = data.updatedAt ? Date.parse(data.updatedAt) : 0;
         if (data.state && serverTime > lastModifiedRef.current) {
           if (data.state.profile) setProfile(data.state.profile);
-          if (data.state.logs) setLogs(data.state.logs);
-          if (data.state.metas) setMetas(data.state.metas);
+          if (data.state.logs) setLogs(migrateDayLogs(data.state.logs));
+          if (data.state.metas) setMetas(migrateMetas(data.state.metas));
           if (Array.isArray(data.state.customFoods)) setCustomFoods(data.state.customFoods);
           lastModifiedRef.current = serverTime;
         }
