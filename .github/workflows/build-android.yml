@@ -1,13 +1,24 @@
 name: build-android
 
 # 手动触发：Actions 页面 → Run workflow → 下载 APK artifact
-# 产出：app-debug.apk（dev client，需连 Metro）+ app-release.apk（独立包，JS 已内嵌）
+# 两个 job 并行，各构建一个变体（单 ABI arm64-v8a 控制磁盘占用）：
+#   app-debug.apk    dev client，需连 Metro 热更新
+#   app-release.apk  独立包，JS 内嵌，装完即用
 on:
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - variant: debug
+            task: assembleDebug
+            path: debug/app-debug.apk
+          - variant: release
+            task: assembleRelease
+            path: release/app-release.apk
     steps:
       - uses: actions/checkout@v4
 
@@ -29,14 +40,12 @@ jobs:
         working-directory: apps/expo
         run: npx expo prebuild --platform android --no-install
 
-      # -x lint/lintVitalRelease：跳过生成代码的 lint，聚焦产出可安装的测试包
-      - name: Build APKs
+      # 单变体 + 单 ABI（arm64-v8a）控制磁盘/耗时；跳过生成代码 lint
+      - name: Build APK
         working-directory: apps/expo/android
-        run: ./gradlew assembleDebug assembleRelease --no-daemon -x lint -x lintVitalRelease
+        run: ./gradlew ${{ matrix.task }} --no-daemon -PreactNativeArchitectures=arm64-v8a -x lint -x lintVitalRelease
 
       - uses: actions/upload-artifact@v4
         with:
-          name: apk
-          path: |
-            apps/expo/android/app/build/outputs/apk/debug/app-debug.apk
-            apps/expo/android/app/build/outputs/apk/release/app-release.apk
+          name: app-${{ matrix.variant }}
+          path: apps/expo/android/app/build/outputs/apk/${{ matrix.path }}
