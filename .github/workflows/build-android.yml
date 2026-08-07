@@ -120,11 +120,67 @@ jobs:
           name: app-debug
           path: apps/expo/android/app/build/outputs/apk/debug/app-debug.apk
 
-  # Android 模拟器冒烟：release APK 装进模拟器，启动 App，断言首页渲染。
+  # 仅用于模拟器冒烟的 x86_64 release APK：
+  # CI 模拟器是 x86_64，加载不了 arm64-only 的 .so（SoLoader 崩），
+  # 真机那份（app-release）保持 arm64-v8a 不变。
+  build-release-x86:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Generate native project
+        working-directory: apps/expo
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('apps/expo/android/gradle/wrapper/gradle-wrapper.properties') }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Build release APK (x86_64)
+        working-directory: apps/expo/android
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            echo "=== Gradle assembleRelease (x86_64) attempt $attempt/3 ==="
+            if ./gradlew assembleRelease --no-daemon --build-cache -PreactNativeArchitectures=x86_64 -x lint -x lintVitalRelease; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Attempt $attempt failed, retrying in 20s..."
+              sleep 20
+            fi
+          done
+          exit 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-release-x86
+          path: apps/expo/android/app/build/outputs/apk/release/app-release.apk
+
+  # Android 模拟器冒烟：x86_64 release APK 装进模拟器，启动 App，断言首页渲染。
   # 首次安装未配对 → 不发网络请求，走本地默认数据渲染（覆盖真机首启路径）。
-  # 只依赖 build-release → release 一好就起模拟器，不干等 debug。
+  # 只依赖 build-release-x86 → x86 包一好就起模拟器，不干等其它构建。
   smoke-android:
-    needs: build-release
+    needs: build-release-x86
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -135,10 +191,10 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Download release APK
+      - name: Download x86 release APK
         uses: actions/download-artifact@v4
         with:
-          name: app-release
+          name: app-release-x86
           path: apk
 
       # GitHub runner 已启用 KVM，需放开 /dev/kvm 设备权限供模拟器硬件加速
