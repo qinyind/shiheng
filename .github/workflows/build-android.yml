@@ -1,0 +1,42 @@
+name: build-android
+
+# 手动触发：Actions 页面 → Run workflow → 下载 APK artifact
+# 产出：app-debug.apk（dev client，需连 Metro）+ app-release.apk（独立包，JS 已内嵌）
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # CNG：android/ 目录不入库，CI 里由 app.json 生成
+      - name: Generate native project
+        working-directory: apps/expo
+        run: npx expo prebuild --platform android --no-install
+
+      # -x lint/lintVitalRelease：跳过生成代码的 lint，聚焦产出可安装的测试包
+      - name: Build APKs
+        working-directory: apps/expo/android
+        run: ./gradlew assembleDebug assembleRelease --no-daemon -x lint -x lintVitalRelease
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: |
+            apps/expo/android/app/build/outputs/apk/debug/app-debug.apk
+            apps/expo/android/app/build/outputs/apk/release/app-release.apk

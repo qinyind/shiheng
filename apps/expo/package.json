@@ -5,8 +5,8 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "build": "expo export --platform web",
     "preview": "serve dist",
@@ -21,6 +21,7 @@
     "expo": "~57.0.10",
     "expo-application": "~57.0.2",
     "expo-constants": "~57.0.9",
+    "expo-dev-client": "~57.0.10",
     "expo-haptics": "~57.0.1",
     "expo-image-manipulator": "~57.0.7",
     "expo-image-picker": "~57.0.7",
