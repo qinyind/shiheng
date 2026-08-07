@@ -10,23 +10,22 @@ adb install -r apk/app-release.apk
 echo "=== Launching app ==="
 adb shell am start -W -n com.shiheng.app/.MainActivity || true
 
-# 等 App 真正成为前台 activity（mResumedActivity 匹配包名），再断言首页文案。
-# 不做 "食衡" 匹配：它是桌面图标 label，launcher 页会命中 → 假阳性（曾发生过）。
+# 轮询首页文案（uiautomator dump），最多 ~90s。
+# 不解析 mResumedActivity：该模拟器 dumpsys 解析为空（踩过坑）。
+# 不做 "食衡" 匹配：它是桌面图标 label，launcher 页会假阳性。
+# 断言串 kcal/力训/蛋白 只出现在 App 内 → 桌面/白屏/启动页都不会误判。
 for i in $(seq 1 9); do
   sleep 10
-  resumed=$(adb shell dumpsys activity activities 2>/dev/null | grep -m1 -oE 'mResumedActivity:[^}]*' || true)
-  echo "[attempt $i] resumed: $resumed"
-  if echo "$resumed" | grep -q 'com.shiheng.app'; then
-    adb shell uiautomator dump /sdcard/window_dump.xml >/dev/null 2>&1 || true
-    adb pull /sdcard/window_dump.xml ./window_dump.xml >/dev/null 2>&1 || true
-    if grep -qE 'kcal|力训|蛋白' ./window_dump.xml 2>/dev/null; then
-      echo "SMOKE_PASS: app foreground + home content rendered (attempt $i)"
-      break
-    fi
-    echo "[attempt $i] app is foreground but home content not found yet"
+  focus=$(adb shell dumpsys window 2>/dev/null | grep -m1 'mCurrentFocus' || true)
+  echo "[attempt $i] focus: $focus"
+  adb shell uiautomator dump /sdcard/window_dump.xml >/dev/null 2>&1 || true
+  adb pull /sdcard/window_dump.xml ./window_dump.xml >/dev/null 2>&1 || true
+  if grep -qE 'kcal|力训|蛋白' ./window_dump.xml 2>/dev/null; then
+    echo "SMOKE_PASS: home content rendered (attempt $i)"
+    break
   fi
   if [ "$i" -eq 9 ]; then
-    echo "SMOKE_FAIL: app did not render home content within ~90s"
+    echo "SMOKE_FAIL: home content not found after ~90s"
     adb exec-out screencap -p > screen_fail.png || true
     adb logcat -d > logcat.txt || true
     exit 1
