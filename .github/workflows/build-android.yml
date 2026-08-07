@@ -41,9 +41,23 @@ jobs:
         run: npx expo prebuild --platform android --no-install
 
       # 单变体 + 单 ABI（arm64-v8a）控制磁盘/耗时；跳过生成代码 lint
+      # 偶发 Gradle Plugin Portal / Maven 网络抖动导致配置期失败（如上轮 foojay 插件解析超时）
+      # → 失败重试 3 次。配置期失败很快（秒级），重试成本低
       - name: Build APK
         working-directory: apps/expo/android
-        run: ./gradlew ${{ matrix.task }} --no-daemon -PreactNativeArchitectures=arm64-v8a -x lint -x lintVitalRelease
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            echo "=== Gradle ${{ matrix.task }} attempt $attempt/3 ==="
+            if ./gradlew ${{ matrix.task }} --no-daemon -PreactNativeArchitectures=arm64-v8a -x lint -x lintVitalRelease; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Attempt $attempt failed, retrying in 20s..."
+              sleep 20
+            fi
+          done
+          exit 1
 
       - uses: actions/upload-artifact@v4
         with:
