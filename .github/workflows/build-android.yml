@@ -164,7 +164,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: smoke-artifacts
+          if-no-files-found: warn
           path: |
             screen.png
+            screen_fail.png
             window_dump.xml
-            logcat_fail.txt
+            logcat.txt

@@ -6,23 +6,40 @@
 set -euo pipefail
 
 adb install -r apk/app-release.apk
-adb shell am start -n com.shiheng.app/.MainActivity
 
-# 首次启动 + Hermes 加载 JS bundle 可能较慢，轮询首页文案（最多 ~90s）
+echo "=== Launching app ==="
+adb shell am start -W -n com.shiheng.app/.MainActivity || true
+
+# 等 App 真正成为前台 activity（mResumedActivity 匹配包名），再断言首页文案。
+# 不做 "食衡" 匹配：它是桌面图标 label，launcher 页会命中 → 假阳性（曾发生过）。
 for i in $(seq 1 9); do
   sleep 10
-  adb shell uiautomator dump /sdcard/window_dump.xml >/dev/null 2>&1 || true
-  adb pull /sdcard/window_dump.xml ./window_dump.xml >/dev/null 2>&1 || true
-  if grep -qE 'kcal|力训|蛋白|食衡' ./window_dump.xml 2>/dev/null; then
-    echo "SMOKE_PASS: home page rendered (attempt $i)"
-    break
+  resumed=$(adb shell dumpsys activity activities 2>/dev/null | grep -m1 -oE 'mResumedActivity:[^}]*' || true)
+  echo "[attempt $i] resumed: $resumed"
+  if echo "$resumed" | grep -q 'com.shiheng.app'; then
+    adb shell uiautomator dump /sdcard/window_dump.xml >/dev/null 2>&1 || true
+    adb pull /sdcard/window_dump.xml ./window_dump.xml >/dev/null 2>&1 || true
+    if grep -qE 'kcal|力训|蛋白' ./window_dump.xml 2>/dev/null; then
+      echo "SMOKE_PASS: app foreground + home content rendered (attempt $i)"
+      break
+    fi
+    echo "[attempt $i] app is foreground but home content not found yet"
   fi
   if [ "$i" -eq 9 ]; then
-    adb logcat -d -t 800 > logcat_fail.txt || true
-    echo "SMOKE_FAIL: home page text not found after ~90s"
+    echo "SMOKE_FAIL: app did not render home content within ~90s"
+    adb exec-out screencap -p > screen_fail.png || true
+    adb logcat -d > logcat.txt || true
     exit 1
   fi
 done
 
+# 收尾：截图 + UI dump + logcat 一并传回，供人工复核
+sleep 3
+adb shell uiautomator dump /sdcard/window_dump.xml >/dev/null 2>&1 || true
+adb pull /sdcard/window_dump.xml ./window_dump.xml >/dev/null 2>&1 || true
 adb exec-out screencap -p > screen.png
+adb logcat -d > logcat.txt || true
+if grep -qE 'FATAL EXCEPTION|AndroidRuntime.*FATAL' logcat.txt; then
+  echo "WARNING: crash signature found in logcat (see artifact)"
+fi
 echo "SMOKE_DONE"
