@@ -1,23 +1,15 @@
 name: build-android
 
 # 手动触发：Actions 页面 → Run workflow → 下载 APK artifact
-# build job：两个并行子 job（debug/release），单 ABI arm64-v8a 控制磁盘
-# smoke-android job：把 release APK 装进 Android 模拟器，断言首页渲染
+# build-release / build-debug：各自独立 runner，单 ABI arm64-v8a 控制磁盘；
+#   gradle 缓存（~/.gradle）跨 run 复用，冷编译 ~20min → 有缓存 ~5-8min
+# smoke-android：只等 build-release（不等较慢的 debug），起模拟器断言首页渲染
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-release:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - variant: debug
-            task: assembleDebug
-            path: debug/app-debug.apk
-          - variant: release
-            task: assembleRelease
-            path: release/app-release.apk
     steps:
       - uses: actions/checkout@v4
 
@@ -39,16 +31,27 @@ jobs:
         working-directory: apps/expo
         run: npx expo prebuild --platform android --no-install
 
+      # gradle 依赖 + 构建缓存，跨 run 复用（wrapper properties 由 prebuild 确定）
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('apps/expo/android/gradle/wrapper/gradle-wrapper.properties') }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
       # 单变体 + 单 ABI（arm64-v8a）控制磁盘/耗时；跳过生成代码 lint
       # 偶发 Gradle Plugin Portal / Maven 网络抖动导致配置期失败（如上轮 foojay 插件解析超时）
       # → 失败重试 3 次。配置期失败很快（秒级），重试成本低
-      - name: Build APK
+      - name: Build release APK
         working-directory: apps/expo/android
         shell: bash
         run: |
           for attempt in 1 2 3; do
-            echo "=== Gradle ${{ matrix.task }} attempt $attempt/3 ==="
-            if ./gradlew ${{ matrix.task }} --no-daemon -PreactNativeArchitectures=arm64-v8a -x lint -x lintVitalRelease; then
+            echo "=== Gradle assembleRelease attempt $attempt/3 ==="
+            if ./gradlew assembleRelease --no-daemon --build-cache -PreactNativeArchitectures=arm64-v8a -x lint -x lintVitalRelease; then
               exit 0
             fi
             if [ "$attempt" -lt 3 ]; then
@@ -60,13 +63,68 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: app-${{ matrix.variant }}
-          path: apps/expo/android/app/build/outputs/apk/${{ matrix.path }}
+          name: app-release
+          path: apps/expo/android/app/build/outputs/apk/release/app-release.apk
+
+  build-debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # CNG：android/ 目录不入库，CI 里由 app.json 生成
+      - name: Generate native project
+        working-directory: apps/expo
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('apps/expo/android/gradle/wrapper/gradle-wrapper.properties') }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Build debug APK
+        working-directory: apps/expo/android
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            echo "=== Gradle assembleDebug attempt $attempt/3 ==="
+            if ./gradlew assembleDebug --no-daemon --build-cache -PreactNativeArchitectures=arm64-v8a -x lint -x lintVitalRelease; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Attempt $attempt failed, retrying in 20s..."
+              sleep 20
+            fi
+          done
+          exit 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: apps/expo/android/app/build/outputs/apk/debug/app-debug.apk
 
   # Android 模拟器冒烟：release APK 装进模拟器，启动 App，断言首页渲染。
   # 首次安装未配对 → 不发网络请求，走本地默认数据渲染（覆盖真机首启路径）。
+  # 只依赖 build-release → release 一好就起模拟器，不干等 debug。
   smoke-android:
-    needs: build
+    needs: build-release
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
