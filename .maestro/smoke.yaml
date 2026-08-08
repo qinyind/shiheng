@@ -13,12 +13,17 @@ appId: com.shiheng.app
 - assertVisible: "食衡"
 - assertVisible: "力训日 · 减脂配额"
 
-# 加餐：餐次卡片在折叠线以下 → 滚动定位后再多滚一屏，把按钮从底部 tab 边缘带离
+# 加餐：餐次卡片在折叠线以下 → 滚动定位后再小幅上滑，把按钮从底部 tab 边缘带离。
+# 不能用整屏 scroll：同一手势在 iOS 会一次滚过头（见 2026-08-08 ios-e2e），把按钮
+# 送出屏幕顶；固定距离的 swipe 两平台确定性一致。
 - scrollUntilVisible:
     element:
       text: "在午饭添加食物"
     direction: DOWN
-- scroll
+- swipe:
+    start: 50%, 60%
+    end: 50%, 40%
+    duration: 300
 - tapOn: "在午饭添加食物"
 
 # 加餐屏：选择食物（稳定独立标签）；食物 chip 用正则全串匹配
