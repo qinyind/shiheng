@@ -57,6 +57,18 @@ jobs:
         run: |
           brew install ccache
           ccache --version
+          # XCBuild 的宏探测（clang -v -E -dM …）走 ccache 的 Apple-clang 路径会失败；
+          # 生成 wrapper：探测（含 -dM）直调真实 clang 绕过 ccache，其余编译走 ccache。
+          # 真实编译器路径用 xcrun 运行时解析，避免硬编码 Xcode 版本号。
+          mkdir -p "$HOME/ccache-bin"
+          REAL_CC="$(xcrun -f clang)"
+          REAL_CXX="$(xcrun -f clang++)"
+          for pair in "clang|$REAL_CC" "clang++|$REAL_CXX"; do
+            name="${pair%%|*}"; real="${pair#*|}"
+            printf '#!/bin/bash\nfor a in "$@"; do\n  [ "$a" = "-dM" ] && exec "%s" "$@"\ndone\nexec /opt/homebrew/bin/ccache "%s" "$@"\n' \
+              "$real" "$real" > "$HOME/ccache-bin/$name"
+            chmod +x "$HOME/ccache-bin/$name"
+          done
 
       - name: Restore ccache cache
         uses: actions/cache@v4
@@ -106,10 +118,10 @@ jobs:
           export CCACHE_COMPRESS=1
           export CCACHE_MAXSIZE=2G
           export CCACHE_SLOPPINESS=clang_index_store,time_macros,modules
-          # XCBuild 子进程 PATH 不含 Homebrew（/opt/homebrew/bin），裸 ccache 找不到 →
-          # 用绝对路径；clang 用 xcrun 解析成绝对路径，ccache 不再依赖 PATH 找编译器。
-          export CC="/opt/homebrew/bin/ccache $(xcrun -f clang)"
-          export CXX="/opt/homebrew/bin/ccache $(xcrun -f clang++)"
+          # CC/CXX 指向 Install ccache 步骤生成的 wrapper：-dM 宏探测直调真实 clang
+          # （ccache 的 Apple-clang 路径处理该探测会失败），其余编译走 ccache。
+          export CC="$HOME/ccache-bin/clang"
+          export CXX="$HOME/ccache-bin/clang++"
           INSTALL_FLAG=""
           if [ "${{ steps.restore-ios.outputs.cache-hit }}" = "true" ]; then
             INSTALL_FLAG="--no-install"
