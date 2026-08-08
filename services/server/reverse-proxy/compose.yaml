@@ -5,6 +5,7 @@ services:
     network_mode: host
     environment:
       APP_DOMAIN: ${APP_DOMAIN}
+      SERVER_IP: ${SERVER_IP}
       MEAL_METER_UPSTREAM: ${MEAL_METER_UPSTREAM:-127.0.0.1:18080}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro

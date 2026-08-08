@@ -1,5 +1,5 @@
 {
-	default_sni 47.122.112.92
+	default_sni {$SERVER_IP}
 }
 
 (meal_meter_backend) {
@@ -17,16 +17,16 @@
 	import meal_meter_backend
 }
 
-http://47.122.112.92 {
+http://{$SERVER_IP} {
 	handle /.well-known/acme-challenge/* {
 		root * /var/www/certbot
 		file_server
 	}
 
-	redir https://47.122.112.92{uri} permanent
+	redir https://{$SERVER_IP}{uri} permanent
 }
 
-https://47.122.112.92 {
-	tls /etc/letsencrypt/live/47.122.112.92/fullchain.pem /etc/letsencrypt/live/47.122.112.92/privkey.pem
+https://{$SERVER_IP} {
+	tls /etc/letsencrypt/live/{$SERVER_IP}/fullchain.pem /etc/letsencrypt/live/{$SERVER_IP}/privkey.pem
 	import meal_meter_backend
 }
