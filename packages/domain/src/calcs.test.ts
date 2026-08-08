@@ -56,3 +56,50 @@ test("targetForMeal splits daily target by carb/protein share", () => {
   assert.equal(result.fat, 18);
   assert.ok(Math.abs(result.kcal - 585) < 1e-9);
 });
+
+test("calculate handles female gain profile with heavy weight", () => {
+  const profile = { ...DEFAULT_PROFILE, sex: "female" as const, goal: "gain" as const, weight: 130 };
+  const calc = calculate(profile);
+  // gain → factor 0.84 / carbRatio 0.7；heavy female → fat 70
+  assert.equal(calc.fat, 70);
+  assert.equal(calc.strength, strengthCalories("female", "beginner"));
+  assert.equal(calc.trainingKcal, calc.trainMaintenance * 0.84);
+  assert.ok(calc.trainingCarbs > 0);
+  // targetsFor 同 profile 训练档与 calculate 一致
+  assert.equal(targetsFor(profile, "training").kcal, calc.trainingKcal);
+  assert.equal(targetsFor(profile, "rest").fat, 70);
+});
+
+test("calculate with timing none yields zero strength and equal maintenance", () => {
+  const calc = calculate({ ...DEFAULT_PROFILE, timing: "none" });
+  assert.equal(calc.strength, 0);
+  assert.equal(calc.trainMaintenance, calc.restMaintenance);
+  assert.equal(targetsFor({ ...DEFAULT_PROFILE, timing: "none" }, "training").kcal, targetsFor({ ...DEFAULT_PROFILE, timing: "none" }, "rest").kcal);
+});
+
+test("strengthCalories intermediate levels", () => {
+  assert.equal(strengthCalories("male", "intermediate"), 200);
+  assert.equal(strengthCalories("female", "intermediate"), 150);
+});
+
+test("tiny profile clamps remaining kcal to zero", () => {
+  const tiny = { sex: "female" as const, age: 80, height: 120, weight: 25, goal: "cut" as const, timing: "none" as const, level: "beginner" as const, cardioDaily: 0 };
+  const calc = calculate(tiny);
+  assert.equal(calc.protein, 0);
+  assert.equal(calc.trainingCarbs, 0);
+  const rest = targetsFor(tiny, "rest");
+  assert.equal(rest.protein, 0);
+  assert.equal(rest.carbs, 0);
+});
+
+test("cut profile at heavy weight caps fat at 70", () => {
+  const profile = { ...DEFAULT_PROFILE, weight: 130 };
+  assert.equal(calculate(profile).fat, 70);
+  assert.equal(targetsFor(profile, "training").fat, 70);
+});
+
+test("gain male profile uses fat 80", () => {
+  const profile = { ...DEFAULT_PROFILE, goal: "gain" as const };
+  assert.equal(calculate(profile).fat, 80);
+  assert.equal(targetsFor(profile, "rest").fat, 80);
+});

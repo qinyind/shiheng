@@ -22,6 +22,23 @@ test("migrateDayLogs merges legacy ids into real meals", () => {
   assert.equal(migrated["2026-08-06"].breakfast.length, 1);
 });
 
+test("migrateEntries leaves already-canonical meal ids unchanged", () => {
+  const entries = [
+    { id: "1", dateKey: "2026-08-06", mealID: "breakfast", foodName: "早饭", grams: 100, per100: { carbs: 1, protein: 1, fat: 1, kcal: 1 } },
+  ];
+  const migrated = migrateEntries(entries, "beforeDinner");
+  assert.equal(migrated[0].mealID, "breakfast");
+  assert.equal(migrated[0], entries[0]);
+});
+
+test("migrateDayLog merges multiple legacy ids into the same real meal", () => {
+  const logs: Record<string, DayLog> = {
+    "2026-08-06": { "breakfast-pre": [entry("a")], breakfast: [entry("b")] },
+  };
+  const migrated = migrateDayLogs(logs);
+  assert.equal(migrated["2026-08-06"].breakfast.length, 2);
+});
+
 test("migrateMetas rewrites meal ids in snapshot meals", () => {
   const metas = {
     "2026-08-06": {
@@ -83,4 +100,39 @@ test("normalizeStoredState distinguishes web and native shapes", () => {
     "native",
   );
   assert.equal(normalizeStoredState(null), null);
+});
+
+test("normalizeStoredState returns null for object matching neither shape", () => {
+  assert.equal(normalizeStoredState({ profile: DEFAULT_PROFILE }), null);
+  assert.equal(normalizeStoredState({ logs: {} }), null);
+});
+
+test("legacyMealIDMapFor afterLunch/lateNight/none mappings", () => {
+  assert.equal(legacyMealIDMapFor("afterLunch").pre, "lunch");
+  assert.equal(legacyMealIDMapFor("afterLunch").other, "dinner");
+  assert.equal(legacyMealIDMapFor("afterLunch").a, "breakfast");
+  assert.equal(legacyMealIDMapFor("afterLunch").c, "dinner");
+  assert.equal(legacyMealIDMapFor("lateNight").d, "post");
+  assert.equal(legacyMealIDMapFor("lateNight").c, "dinner");
+  assert.equal(legacyMealIDMapFor("none").a, "breakfast");
+  assert.equal(legacyMealIDMapFor("none").c, "dinner");
+});
+
+test("fromWebState carries non-empty customFoods into SavedState", () => {
+  const state = fromWebState({
+    profile: DEFAULT_PROFILE,
+    logs: {},
+    customFoods: [
+      { id: "cf1", name: "鸡胸肉", category: "肉类", carbs: 0, protein: 31, fat: 3.6, kcal: 165 },
+      { id: "cf2", name: "燕麦", category: "主食", carbs: 60, protein: 13, fat: 7, kcal: 379 },
+    ],
+  });
+  assert.equal(state.customFoods.length, 2);
+  assert.deepEqual(state.customFoods[0], {
+    id: "cf1",
+    name: "鸡胸肉",
+    category: "肉类",
+    per100: { carbs: 0, protein: 31, fat: 3.6, kcal: 165 },
+  });
+  assert.deepEqual(state.customFoods[1].per100, { carbs: 60, protein: 13, fat: 7, kcal: 379 });
 });
