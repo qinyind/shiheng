@@ -197,3 +197,36 @@ index 9fffe5e..8cc1f18 100644
    internal let pointee: facebook.jsi.WeakObject
  
    /// Initializes a weak object with the underlying JSI weak object.
+diff --git a/node_modules/expo-modules-jsi/apple/scripts/generate-modulemap.sh b/node_modules/expo-modules-jsi/apple/scripts/generate-modulemap.sh
+index 3637f3c..e955a7d 100755
+--- a/node_modules/expo-modules-jsi/apple/scripts/generate-modulemap.sh
++++ b/node_modules/expo-modules-jsi/apple/scripts/generate-modulemap.sh
+@@ -48,12 +48,22 @@ fi
+ 
+ # Avoid touching the file when contents would be identical, so the xcframework
+ # hash cache and Xcode don't see a spurious change when inputs are unchanged.
+-NEW_CONTENT="module jsi {
+-  umbrella header \"${JSI_UMBRELLA}\"
+-
+-  export *
+-  module * { export * }
+-}"
++#
++# RN's jsi.h umbrella does not #include its sibling headers (JSIDynamic.h,
++# jsilib.h, decorator.h, threadsafe.h, instrumentation.h, hermes-interfaces.h);
++# the Swift Clang importer on Xcode 26.x rejects the module for that
++# ("umbrella header for module 'jsi' does not include header '...'"). Declare
++# every header in the jsi directory explicitly instead of using an umbrella so
++# the import works across Xcode versions.
++JSI_DIR="$(dirname "${JSI_UMBRELLA}")"
++NEW_CONTENT="$(
++  printf 'module jsi {\n'
++  for header in "${JSI_DIR}"/*.h; do
++    printf '  header "%s"\n' "${header}"
++  done
++  printf '  export *\n'
++  printf '}\n'
++)"
+ if [[ ! -f "$GENERATED_MODULE_MAP" ]] || [[ "$(cat "$GENERATED_MODULE_MAP")" != "$NEW_CONTENT" ]]; then
+   printf '%s\n' "$NEW_CONTENT" > "$GENERATED_MODULE_MAP"
+ fi
