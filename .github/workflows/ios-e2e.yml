@@ -11,17 +11,18 @@ jobs:
   smoke-ios:
     # RN 0.86 需要 Xcode >= 16.1。macos-15 默认 16.4 有 SPM 解析回归（空错误）；
     # 16.3 的 iOS 18.4 平台在镜像上未完整安装（destination 解析失败）；
-    # 26.3 能进真正编译，但 expo-modules-jsi 57.0.4 在 26.3 上编译不过
-    # （jsi umbrella header 缺 jsilib.h）→ 降 26.2 二分定位是否 26 整线问题。
+    # 26.2/26.3 编译不过 expo-modules-jsi（RN 0.86 的 React-jsi pod 不生成
+    # umbrella header，26.2+ 的 Swift importer 拒绝，本地 Mac 26.6 容忍）→
+    # 继续二分降 26.1.1（严格检查可能 26.2 才引入）。
     runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode 26.2
+      - name: Select Xcode 26.1.1
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '26.2'
+          xcode-version: '26.1.1'
 
       - uses: actions/setup-node@v4
         with:
