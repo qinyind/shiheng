@@ -88,12 +88,20 @@ jobs:
           curl -Ls "https://get.maestro.mobile.dev" | bash
           "$HOME/.maestro/bin/maestro" --version
 
-      # Release + 内嵌 JS bundle → 不依赖 Metro；--device 指向已开机的模拟器
+      # Release + 内嵌 JS bundle → 不依赖 Metro；--device 指向已开机的模拟器。
+      # 命中 ios/ 缓存时加 --no-install：expo 靠「临时预构建目录里的依赖变更标记」决定是否重跑
+      # pod install，冷 runner 上没有该标记 → 每轮都重装 pods → mtime 全新 → 全量重编。
+      # 跳过 pod install 后，恢复的 Pods mtime 稳定，DerivedData 增量才真正生效。
       - name: Build & install Release app
         working-directory: apps/expo
         env:
           EXPO_DEBUG: '1'
-        run: npx expo run:ios --configuration Release --no-bundler --device "$UDID"
+        run: |
+          INSTALL_FLAG=""
+          if [ "${{ steps.restore-ios.outputs.cache-hit }}" = "true" ]; then
+            INSTALL_FLAG="--no-install"
+          fi
+          npx expo run:ios --configuration Release --no-bundler $INSTALL_FLAG --device "$UDID"
 
       # pod install 在构建步骤内执行后，ios/Pods 才齐 → 这里保存 ios/ 缓存（含 Pods）。
       # 仅 prebuild 跑过（缓存未命中）时保存，命中轮不重复上传。
