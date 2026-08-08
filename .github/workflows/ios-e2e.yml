@@ -117,6 +117,9 @@ jobs:
           export CCACHE_DIR="$HOME/Library/Caches/ccache"
           export CCACHE_COMPRESS=1
           export CCACHE_MAXSIZE=2G
+          # RN pods 用 -fmodules：需 depend mode + modules sloppiness 才可缓存
+          # （缺任一个 ccache 报 could_not_use_modules，全部编译 uncacheable）。
+          export CCACHE_DEPEND=1
           export CCACHE_SLOPPINESS=clang_index_store,time_macros,modules
           # CC/CXX 指向 Install ccache 步骤生成的 wrapper：-dM 宏探测直调真实 clang
           # （ccache 的 Apple-clang 路径处理该探测会失败），其余编译走 ccache。
