@@ -1,0 +1,66 @@
+name: ios-e2e
+
+# 手动触发：Actions 页面 → Run workflow → 跑 iOS 模拟器 Release 构建 + Maestro 交互流
+# 使用 .maestro/smoke.yaml（与 Android/Web 共用同一批关键流）
+# 费用：macOS runner 仅在【公开仓库】免费 —— 本仓库已切 public
+# 注意：iOS 构建无缓存时 ~15-25min（pods 每次 prebuild 后重装，暂未做缓存）
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke-ios:
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      # Maestro 是 JVM 应用，需 Java（与 Android smoke 一致用 temurin 17）
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # CNG：ios/ 不入库，CI 里由 app.json 生成（与 android prebuild 对称）
+      # pods 由下方 expo run:ios 自动安装（CI 非交互模式）
+      - name: Generate native project
+        working-directory: apps/expo
+        run: npx expo prebuild --platform ios --no-install
+
+      # 选第一个可用 iPhone 模拟器并开机（headless，无需 GUI）
+      - name: Boot simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | jq -r '.devices | to_entries[] | .value[] | select(.name | startswith("iPhone")) | .udid' | head -1)
+          echo "Booting simulator: $UDID"
+          xcrun simctl boot "$UDID" 2>/dev/null || true
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+
+      - name: Install Maestro
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          "$HOME/.maestro/bin/maestro" --version
+
+      # Release + 内嵌 JS bundle → 不依赖 Metro；--device 指向已开机的模拟器
+      - name: Build & install Release app
+        working-directory: apps/expo
+        run: npx expo run:ios --configuration Release --no-bundler --device "$UDID"
+
+      # 跨平台冒烟流（文本匹配需正则全串，见 .maestro/smoke.yaml 头注）
+      - name: Run Maestro smoke
+        run: $HOME/.maestro/bin/maestro test .maestro/smoke.yaml
+
+      - name: Upload smoke artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-smoke-artifacts
+          if-no-files-found: ignore
+          path: |
+            ~/.maestro/tests/
