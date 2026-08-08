@@ -69,19 +69,18 @@ jobs:
               "$real" "$real" > "$HOME/ccache-bin/$name"
             chmod +x "$HOME/ccache-bin/$name"
           done
-          # ccache 配置写入文件（~/.ccache/ccache.conf）而非仅环境变量：XCBuild 可能
-          # 剥离 CCACHE_* env（此前已证其剥离 PATH），配置文件在 env 缺失时仍生效。
-          # log_file 便于诊断每条 uncacheable 的确切原因。
-          mkdir -p "$HOME/.ccache"
-          printf 'cache_dir = %s/Library/Caches/ccache\nmax_size = 2.0G\ncompression = true\nsloppiness = clang_index_store,time_macros,modules\ndepend_mode = true\nlog_file = %s/Library/Caches/ccache.log\n' \
-            "$HOME" "$HOME" > "$HOME/.ccache/ccache.conf"
+          # ccache 配置写在构建步骤（restore 之后）的 $CCACHE_DIR/ccache.conf：
+          # CCACHE_DIR env 设置后 ccache 只读 $CCACHE_DIR/ccache.conf，不回退
+          # ~/.ccache/ccache.conf（本机实测）。漏写则 depend_mode/modules 失效 →
+          # -fmodules 编译 100% uncacheable（此前 6 轮 0/2108、0.02MiB 的根因）。
+          # 见下方 Build & install Release app 步骤。
 
       - name: Restore ccache cache
         uses: actions/cache@v4
         with:
           path: ~/Library/Caches/ccache
-          key: ios-ccache-${{ hashFiles('apps/expo/app.json', 'apps/expo/package.json', 'package-lock.json', 'patches/**') }}
-          restore-keys: ios-ccache-
+          key: ios-ccache-v2-${{ hashFiles('apps/expo/app.json', 'apps/expo/package.json', 'package-lock.json', 'patches/**') }}
+          restore-keys: ios-ccache-v2-
 
       # CocoaPods：pod 源码 + CDN spec 索引，内容寻址，按依赖 hash 作 key（不膨胀）
       - name: Restore CocoaPods cache
@@ -127,6 +126,17 @@ jobs:
           # （缺任一个 ccache 报 could_not_use_modules，全部编译 uncacheable）。
           export CCACHE_DEPEND=1
           export CCACHE_SLOPPINESS=clang_index_store,time_macros,modules
+          # 配置写入两处，覆盖 XCBuild 子进程 env 的两种可能：
+          #  A) 传递 CCACHE_DIR → ccache 读 $CCACHE_DIR/ccache.conf（本机实测）；
+          #  B) 剥离 CCACHE_DIR（已证其剥离 PATH）→ ccache 读 ~/.ccache/ccache.conf。
+          # 缺 depend_mode+modules sloppiness → -fmodules 编译全部 could_not_use_modules，
+          # 此前 6 轮 2108/2108 uncacheable、缓存 0.02MiB 的根因即配置没被读到。
+          # cache_dir 指向 ~/Library/Caches/ccache（=下方 actions/cache 的 path），
+          # 保证 ccache 写入落在缓存路径上；log_file 供下方诊断 uncacheable 原因。
+          mkdir -p "$HOME/.ccache" "$HOME/Library/Caches/ccache"
+          printf 'cache_dir = %s/Library/Caches/ccache\nmax_size = 2.0G\ncompression = true\nsloppiness = clang_index_store,time_macros,modules\ndepend_mode = true\nlog_file = %s/Library/Caches/ccache.log\n' \
+            "$HOME" "$HOME" > "$HOME/.ccache/ccache.conf"
+          cp "$HOME/.ccache/ccache.conf" "$HOME/Library/Caches/ccache/ccache.conf"
           # CC/CXX 指向 Install ccache 步骤生成的 wrapper：-dM 宏探测直调真实 clang
           # （ccache 的 Apple-clang 路径处理该探测会失败），其余编译走 ccache。
           export CC="$HOME/ccache-bin/clang"
