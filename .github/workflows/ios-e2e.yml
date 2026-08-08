@@ -10,10 +10,10 @@ on:
 jobs:
   smoke-ios:
     # RN 0.86 需要 Xcode >= 16.1。macos-15 默认 16.4 有 SPM 解析回归（空错误）；
-    # 16.3 的 iOS 18.4 平台在镜像上未完整安装（destination 解析失败）；
-    # 26.2/26.3 编译不过 expo-modules-jsi（RN 0.86 的 React-jsi pod 不生成
-    # umbrella header，26.2+ 的 Swift importer 拒绝，本地 Mac 26.6 容忍）→
-    # 继续二分降 26.1.1（严格检查可能 26.2 才引入）。
+    # 16.3 的 iOS 18.4 平台在镜像上未完整安装；26.2/26.3 的 Swift importer 拒绝
+    # RN 0.86 缺失的 jsi umbrella header（本地 Mac 26.6 容忍）→ 选 26.1.1
+    # （importer 宽容），并靠 patches/expo-modules-jsi（patch-package 在
+    # postinstall 应用）修复 Swift 6.2 的 weak-let 编译错误。
     runs-on: macos-15
     timeout-minutes: 60
     steps:

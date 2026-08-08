@@ -10,6 +10,7 @@
     "packages/domain"
   ],
   "scripts": {
+    "postinstall": "patch-package",
     "dev": "npm run dev:expo",
     "dev:expo": "npm run start --workspace @diet/expo",
     "build": "npm run build --workspace @diet/expo",
@@ -37,6 +38,7 @@
     "@types/react-dom": "19.2.3",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
+    "patch-package": "^8.0.1",
     "typescript": "5.9.3",
     "typescript-eslint": "^8.59.3"
   },
