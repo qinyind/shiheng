@@ -1,0 +1,97 @@
+name: ci
+
+# 全量测试门禁：4 个并行 job，各自独立 runner
+# domain-test / expo-unit / server-test：秒级~分钟级单测与类型检查
+# web-e2e：playwright 起静态 Web 产物（expo export → serve 8081）跑端到端
+# 注：不装 gradle/java、不跑 expo prebuild（那些只属于 Android 构建 workflow）
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # 领域层单测（node --test + 覆盖率），不依赖外部服务
+  domain-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run domain tests
+        run: npm run test:domain
+
+  # expo 单测（jest-expo）+ 类型检查（tsc --noEmit）
+  expo-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run expo unit tests
+        run: npm run test:expo:unit
+
+      - name: Run expo typecheck
+        run: npm run test:expo
+
+  # server 独立部署、独立 lockfile → 单独 npm ci；集成测试用内存 repository，不依赖 Postgres
+  server-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install server dependencies
+        run: npm --prefix services/server ci --no-audit --no-fund
+
+      - name: Run server tests
+        run: npm --prefix services/server test
+
+  # 端到端：chromium + 静态 Web 产物；CI 下 webServer 的 reuseExistingServer 自动为 false，playwright 自管生命周期
+  web-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run e2e tests
+        run: npm run test:e2e
+
+      # 失败时上传 trace/截图（test-results/）与 HTML 报告（playwright-report/），目录不存在则忽略
+      - name: Upload e2e artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          if-no-files-found: ignore
+          path: |
+            test-results/
+            playwright-report/
