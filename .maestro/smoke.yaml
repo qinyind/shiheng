@@ -1,0 +1,50 @@
+# 食衡 跨平台冒烟流（iOS / Android 模拟器共用，Maestro 驱动）
+# 与 Web Playwright E2E 覆盖同一批关键流：首页渲染 → 加餐 → 训练日切换 → 历史。
+# 注意：Maestro 文本匹配是「正则全串匹配」——iOS 会把相邻文本合并成一个
+# accessibilityText（如 "熟米饭, 133 kcal/100g"），因此用 "熟米饭.*" 这类正则。
+# 克数输入用 decimal-pad 键盘，RN 无标准 dismiss action（hideKeyboard 失效），
+# 故不碰输入框、用默认克数直接添加（domain 数值由 Web/单测覆盖，原生冒烟验交互链）。
+appId: com.shiheng.app
+---
+- launchApp:
+    stopApp: true
+
+# 首页渲染（顶部区域，首屏可见）
+- assertVisible: "食衡"
+- assertVisible: "力训日 · 减脂配额"
+
+# 加餐：餐次卡片在折叠线以下 → 滚动定位后再多滚一屏，把按钮从底部 tab 边缘带离
+- scrollUntilVisible:
+    element:
+      text: "在午饭添加食物"
+    direction: DOWN
+- scroll
+- tapOn: "在午饭添加食物"
+
+# 加餐屏：选择食物（稳定独立标签）；食物 chip 用正则全串匹配
+- assertVisible: "选择食物"
+- tapOn: "熟米饭.*"
+
+# 添加按钮在折叠线以下 → 滚动定位点击（用默认克数，避开键盘）
+- scrollUntilVisible:
+    element:
+      text: "添加"
+    direction: DOWN
+- tapOn: "添加"
+
+# 回到首页：加餐条目出现（滚动位置保留在餐次卡区域）
+- assertVisible: "熟米饭.*"
+
+# 训练日切换：滚动回顶部区域 → 力训日 → 休息日 → 回力训日
+- scrollUntilVisible:
+    element:
+      text: "休息日"
+    direction: UP
+- tapOn: "休息日"
+- assertVisible: "休息日 · 减脂配额"
+- tapOn: "力训日"
+- assertVisible: "力训日 · 减脂配额"
+
+# 历史页渲染（底部 tab 常驻；iOS tab 的 accessibilityText 带 ", tab, N of 4" 后缀）
+- tapOn: "历史.*"
+- assertVisible: "每天的变化，都留得住"

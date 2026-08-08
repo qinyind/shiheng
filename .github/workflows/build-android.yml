@@ -3,7 +3,8 @@ name: build-android
 # 手动触发：Actions 页面 → Run workflow → 下载 APK artifact
 # build-release / build-debug：各自独立 runner，单 ABI arm64-v8a 控制磁盘；
 #   gradle 缓存（~/.gradle）跨 run 复用，冷编译 ~20min → 有缓存 ~5-8min
-# smoke-android：只等 build-release（不等较慢的 debug），起模拟器断言首页渲染
+# smoke-android：只等 build-release-x86（不等较慢的 debug），起模拟器
+#   先断言首页渲染（android-smoke.sh），再跑 Maestro 交互流（.maestro/smoke.yaml）
 on:
   workflow_dispatch:
 
@@ -176,7 +177,9 @@ jobs:
           name: app-release-x86
           path: apps/expo/android/app/build/outputs/apk/release/app-release.apk
 
-  # Android 模拟器冒烟：x86_64 release APK 装进模拟器，启动 App，断言首页渲染。
+  # Android 模拟器冒烟 + 交互级 E2E：x86_64 release APK 装进模拟器。
+  # ① android-smoke.sh 断言首页渲染；② 同一台模拟器跑 Maestro 交互流
+  #   （.maestro/smoke.yaml，与 iOS/Web 共用，iOS agent 维护）。
   # 首次安装未配对 → 不发网络请求，走本地默认数据渲染（覆盖真机首启路径）。
   # 只依赖 build-release-x86 → x86 包一好就起模拟器，不干等其它构建。
   smoke-android:
@@ -204,7 +207,14 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Run emulator smoke test
+      # Maestro 交互级 E2E 依赖：官方安装脚本装到 ~/.maestro/bin
+      # （JAVA_HOME 由上方 setup-java@v4 temurin 17 提供）
+      - name: Install Maestro
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          "$HOME/.maestro/bin/maestro" --version
+
+      - name: Run emulator smoke + Maestro E2E
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
@@ -213,7 +223,8 @@ jobs:
           disable-animations: true
           # 该 action 按行执行 script，多行循环会被拆开（此前已踩坑）
           # → 逻辑放独立脚本文件，这里单行调用
-          script: bash .github/scripts/android-smoke.sh
+          # 脚本内部：先 android-smoke.sh 首页渲染冒烟，再 maestro test 交互流
+          script: bash .github/scripts/android-e2e.sh
 
       - name: Upload smoke artifacts
         if: always()
