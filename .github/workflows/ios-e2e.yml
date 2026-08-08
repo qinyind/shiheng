@@ -106,8 +106,10 @@ jobs:
           export CCACHE_COMPRESS=1
           export CCACHE_MAXSIZE=2G
           export CCACHE_SLOPPINESS=clang_index_store,time_macros,modules
-          export CC="ccache clang"
-          export CXX="ccache clang++"
+          # XCBuild 子进程 PATH 不含 Homebrew（/opt/homebrew/bin），裸 ccache 找不到 →
+          # 用绝对路径；clang 用 xcrun 解析成绝对路径，ccache 不再依赖 PATH 找编译器。
+          export CC="/opt/homebrew/bin/ccache $(xcrun -f clang)"
+          export CXX="/opt/homebrew/bin/ccache $(xcrun -f clang++)"
           INSTALL_FLAG=""
           if [ "${{ steps.restore-ios.outputs.cache-hit }}" = "true" ]; then
             INSTALL_FLAG="--no-install"
