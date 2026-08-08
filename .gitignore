@@ -45,6 +45,11 @@ coverage/
 .vercel
 *-preview.png
 
+# --- Playwright artifacts ---
+test-results/
+playwright-report/
+blob-report/
+
 # --- Native (apps/native) build output ---
 apps/native/capacitor-shell/
 apps/native/ios/App/App/public/
