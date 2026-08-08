@@ -9,7 +9,8 @@ on:
 
 jobs:
   smoke-ios:
-    runs-on: macos-14
+    # RN 0.86 需要 Xcode >= 16.1；macos-15 runner 默认 Xcode 16.2
+    runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -23,7 +24,7 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       # Maestro 是 JVM 应用，需 Java（与 Android smoke 一致用 temurin 17）
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
