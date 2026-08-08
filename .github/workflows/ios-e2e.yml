@@ -3,8 +3,8 @@ name: ios-e2e
 # 手动触发：Actions 页面 → Run workflow → 跑 iOS 模拟器 Release 构建 + Maestro 交互流
 # 使用 .maestro/smoke.yaml（与 Android/Web 共用同一批关键流）
 # 费用：macOS runner 仅在【公开仓库】免费 —— 本仓库已切 public
-# 缓存：DerivedData + CocoaPods（下方 restore 步骤）。首跑冷构建 ~40min 并落缓存，
-# 之后源码级改动走增量编译 ~10min；依赖/补丁变更会强制重建。
+# 缓存：ccache + CocoaPods + ios/（下方 restore 步骤）。冷跑 ~30min 填充 ccache 并落缓存，
+# 之后 pod 的 ObjC/C++ 编译按内容命中 → 热跑 ~10min；依赖/补丁变更会强制重建。
 on:
   workflow_dispatch:
 
@@ -33,10 +33,10 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       # ── iOS 构建缓存 ──
-      # 根因：prebuild 每轮重建 apps/expo/ios/、pod install 重新解包 Pods → 所有 pod 源文件
-      # mtime 全新 → xcodebuild 判定全部过期，DerivedData 缓存救不了 pod 编译阶段。
-      # 修法：缓存 apps/expo/ios/（含 Pods + Podfile.lock），命中即跳过 prebuild，
-      # Pods mtime 跨轮稳定 → DerivedData 增量编译才真正生效。
+      # 1) ios/（含 Pods + Podfile.lock）：命中即跳过 prebuild，避免每轮重新生成原生工程。
+      # 2) ccache：pod 的 ObjC/C++ 编译按源码内容+编译参数寻址，跨 runner 命中。
+      #    （恢复的 DerivedData/build.db 已被证明无效：环境一致仍全量重编，XCBuild 判全部过期。）
+      # 3) CocoaPods spec 索引：仅冷跑 pod install 时用到。
       - name: Restore native ios project
         id: restore-ios
         uses: actions/cache/restore@v4
@@ -51,15 +51,19 @@ jobs:
         working-directory: apps/expo
         run: npx expo prebuild --platform ios --no-install
 
-      # DerivedData：xcodebuild 默认路径（expo run:ios 未传 -derivedDataPath）。key 用依赖 hash
-      # 不用 sha——精确命中后 post-action 不再重复上传，缓存稳定；源码改动不换 key，xcodebuild
-      # 在缓存之上增量。
-      - name: Restore iOS DerivedData cache
+      # ccache：内容寻址编译缓存。恢复的 DerivedData 已被证明无法跨 runner 增量（XCBuild 对恢复的
+      # build.db 判定全部输入过期 → 全量重编）；ccache 按源码内容+编译参数命中，不依赖 mtime/build.db。
+      - name: Install ccache
+        run: |
+          brew install ccache
+          ccache --version
+
+      - name: Restore ccache cache
         uses: actions/cache@v4
         with:
-          path: ~/Library/Developer/Xcode/DerivedData
-          key: ios-dd-${{ hashFiles('apps/expo/app.json', 'apps/expo/package.json', 'package-lock.json', 'patches/**') }}
-          restore-keys: ios-dd-
+          path: ~/Library/Caches/ccache
+          key: ios-ccache-${{ hashFiles('apps/expo/app.json', 'apps/expo/package.json', 'package-lock.json', 'patches/**') }}
+          restore-keys: ios-ccache-
 
       # CocoaPods：pod 源码 + CDN spec 索引，内容寻址，按依赖 hash 作 key（不膨胀）
       - name: Restore CocoaPods cache
@@ -89,19 +93,28 @@ jobs:
           "$HOME/.maestro/bin/maestro" --version
 
       # Release + 内嵌 JS bundle → 不依赖 Metro；--device 指向已开机的模拟器。
-      # 命中 ios/ 缓存时加 --no-install：expo 靠「临时预构建目录里的依赖变更标记」决定是否重跑
-      # pod install，冷 runner 上没有该标记 → 每轮都重装 pods → mtime 全新 → 全量重编。
-      # 跳过 pod install 后，恢复的 Pods mtime 稳定，DerivedData 增量才真正生效。
+      # 命中 ios/ 缓存时加 --no-install：expo 按「临时预构建目录里的依赖变更标记」决定是否重跑
+      # pod install，冷 runner 上没有该标记 → 每轮重装 pods；--no-install 直接跳过。
+      # CC/CXX 指向 ccache：pod 的 ObjC/C++（RNSVG/Reanimated/Screens…）按内容命中免重编；
+      # Swift 文件 ccache 不缓存但数量少。构建末尾 ccache -s 输出命中率便于诊断。
       - name: Build & install Release app
         working-directory: apps/expo
         env:
           EXPO_DEBUG: '1'
         run: |
+          export CCACHE_DIR="$HOME/Library/Caches/ccache"
+          export CCACHE_COMPRESS=1
+          export CCACHE_MAXSIZE=2G
+          export CCACHE_SLOPPINESS=clang_index_store,time_macros,modules
+          export CC="ccache clang"
+          export CXX="ccache clang++"
           INSTALL_FLAG=""
           if [ "${{ steps.restore-ios.outputs.cache-hit }}" = "true" ]; then
             INSTALL_FLAG="--no-install"
           fi
           npx expo run:ios --configuration Release --no-bundler $INSTALL_FLAG --device "$UDID"
+          echo "── ccache stats ──"
+          ccache -s
 
       # pod install 在构建步骤内执行后，ios/Pods 才齐 → 这里保存 ios/ 缓存（含 Pods）。
       # 仅 prebuild 跑过（缓存未命中）时保存，命中轮不重复上传。
