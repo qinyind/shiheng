@@ -69,6 +69,12 @@ jobs:
               "$real" "$real" > "$HOME/ccache-bin/$name"
             chmod +x "$HOME/ccache-bin/$name"
           done
+          # ccache 配置写入文件（~/.ccache/ccache.conf）而非仅环境变量：XCBuild 可能
+          # 剥离 CCACHE_* env（此前已证其剥离 PATH），配置文件在 env 缺失时仍生效。
+          # log_file 便于诊断每条 uncacheable 的确切原因。
+          mkdir -p "$HOME/.ccache"
+          printf 'cache_dir = %s/Library/Caches/ccache\nmax_size = 2.0G\ncompression = true\nsloppiness = clang_index_store,time_macros,modules\ndepend_mode = true\nlog_file = %s/Library/Caches/ccache.log\n' \
+            "$HOME" "$HOME" > "$HOME/.ccache/ccache.conf"
 
       - name: Restore ccache cache
         uses: actions/cache@v4
@@ -132,6 +138,8 @@ jobs:
           npx expo run:ios --configuration Release --no-bundler $INSTALL_FLAG --device "$UDID"
           echo "── ccache stats ──"
           ccache -s
+          echo "── uncacheable reasons ──"
+          grep -oE "Result: [a-z_]+" "$HOME/Library/Caches/ccache.log" 2>/dev/null | sort | uniq -c | sort -rn | head -10
 
       # pod install 在构建步骤内执行后，ios/Pods 才齐 → 这里保存 ios/ 缓存（含 Pods）。
       # 仅 prebuild 跑过（缓存未命中）时保存，命中轮不重复上传。
