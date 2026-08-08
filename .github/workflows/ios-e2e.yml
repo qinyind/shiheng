@@ -32,40 +32,48 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      # iOS 构建缓存。
-      # DerivedData：xcodebuild 默认路径（expo run:ios 未传 -derivedDataPath），编译产物按
-      # 内容 hash 增量——key 含依赖 hash + commit sha：依赖/补丁变了强制重建，源码变了仍能
-      # 命中同依赖前缀的最近缓存做增量编译；post-action 每轮自动保存最新（sha 唯一 → 必存）。
-      # CocoaPods：pod 源码 + CDN spec 索引，内容寻址，按依赖 hash 作 key（不膨胀）。
+      # ── iOS 构建缓存 ──
+      # 根因：prebuild 每轮重建 apps/expo/ios/、pod install 重新解包 Pods → 所有 pod 源文件
+      # mtime 全新 → xcodebuild 判定全部过期，DerivedData 缓存救不了 pod 编译阶段。
+      # 修法：缓存 apps/expo/ios/（含 Pods + Podfile.lock），命中即跳过 prebuild，
+      # Pods mtime 跨轮稳定 → DerivedData 增量编译才真正生效。
+      - name: Restore native ios project
+        id: restore-ios
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/expo/ios
+          key: ios-native-${{ hashFiles('apps/expo/app.json', 'apps/expo/package.json', 'package-lock.json', 'patches/**') }}
+          restore-keys: ios-native-
+
+      # CNG：仅在 ios/ 缓存未命中时生成（命中直接用，保持 Pods mtime 稳定）
+      - name: Generate native project
+        if: steps.restore-ios.outputs.cache-hit != 'true'
+        working-directory: apps/expo
+        run: npx expo prebuild --platform ios --no-install
+
+      # DerivedData：xcodebuild 默认路径（expo run:ios 未传 -derivedDataPath）。key 用依赖 hash
+      # 不用 sha——精确命中后 post-action 不再重复上传，缓存稳定；源码改动不换 key，xcodebuild
+      # 在缓存之上增量。
       - name: Restore iOS DerivedData cache
         uses: actions/cache@v4
         with:
           path: ~/Library/Developer/Xcode/DerivedData
-          key: ios-dd-${{ hashFiles('apps/expo/app.json', 'apps/expo/package.json', 'package-lock.json', 'patches/**') }}-${{ github.sha }}
-          restore-keys: |
-            ios-dd-${{ hashFiles('apps/expo/app.json', 'apps/expo/package.json', 'package-lock.json', 'patches/**') }}-
-            ios-dd-
+          key: ios-dd-${{ hashFiles('apps/expo/app.json', 'apps/expo/package.json', 'package-lock.json', 'patches/**') }}
+          restore-keys: ios-dd-
 
+      # CocoaPods：pod 源码 + CDN spec 索引，内容寻址，按依赖 hash 作 key（不膨胀）
       - name: Restore CocoaPods cache
         uses: actions/cache@v4
         with:
           path: ~/Library/Caches/CocoaPods
           key: ios-pods-${{ hashFiles('apps/expo/package.json', 'package-lock.json', 'patches/**') }}
-          restore-keys: |
-            ios-pods-${{ hashFiles('apps/expo/package.json', 'package-lock.json', 'patches/**') }}-
-            ios-pods-
+          restore-keys: ios-pods-
 
       # Maestro 是 JVM 应用，需 Java（与 Android smoke 一致用 temurin 17）
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-
-      # CNG：ios/ 不入库，CI 里由 app.json 生成（与 android prebuild 对称）
-      # pods 由下方 expo run:ios 自动安装（CI 非交互模式）
-      - name: Generate native project
-        working-directory: apps/expo
-        run: npx expo prebuild --platform ios --no-install
 
       # 选第一个可用 iPhone 模拟器并开机（headless，无需 GUI）
       - name: Boot simulator
@@ -86,6 +94,15 @@ jobs:
         env:
           EXPO_DEBUG: '1'
         run: npx expo run:ios --configuration Release --no-bundler --device "$UDID"
+
+      # pod install 在构建步骤内执行后，ios/Pods 才齐 → 这里保存 ios/ 缓存（含 Pods）。
+      # 仅 prebuild 跑过（缓存未命中）时保存，命中轮不重复上传。
+      - name: Save native ios project cache
+        if: steps.restore-ios.outputs.cache-hit != 'true' && success()
+        uses: actions/cache/save@v4
+        with:
+          path: apps/expo/ios
+          key: ios-native-${{ hashFiles('apps/expo/app.json', 'apps/expo/package.json', 'package-lock.json', 'patches/**') }}
 
       # 跨平台冒烟流（文本匹配需正则全串，见 .maestro/smoke.yaml 头注）
       - name: Run Maestro smoke
