@@ -3,8 +3,9 @@ name: ios-e2e
 # 手动触发：Actions 页面 → Run workflow → 跑 iOS 模拟器 Release 构建 + Maestro 交互流
 # 使用 .maestro/smoke.yaml（与 Android/Web 共用同一批关键流）
 # 费用：macOS runner 仅在【公开仓库】免费 —— 本仓库已切 public
-# 缓存：ccache + CocoaPods + ios/（下方 restore 步骤）。冷跑 ~30min 填充 ccache 并落缓存，
-# 之后 pod 的 ObjC/C++ 编译按内容命中 → 热跑 ~10min；依赖/补丁变更会强制重建。
+# 缓存：ios/（原生工程 + Pods）+ CocoaPods。命中 ios/ 免 prebuild + pod install，省 ~5min；
+# 其余编译阶段每次全量跑（~28min）——已实测恢复的 DerivedData/build.db 被 XCBuild 判
+# 全部输入过期 → 跨 runner 无法增量；ccache 也无法缓存本 Xcode 的 pod 编译（详见 git 历史）。
 on:
   workflow_dispatch:
 
@@ -33,10 +34,9 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       # ── iOS 构建缓存 ──
-      # 1) ios/（含 Pods + Podfile.lock）：命中即跳过 prebuild，避免每轮重新生成原生工程。
-      # 2) ccache：pod 的 ObjC/C++ 编译按源码内容+编译参数寻址，跨 runner 命中。
-      #    （恢复的 DerivedData/build.db 已被证明无效：环境一致仍全量重编，XCBuild 判全部过期。）
-      # 3) CocoaPods spec 索引：仅冷跑 pod install 时用到。
+      # 目标：命中时免 prebuild + pod install（省 ~5min）。实测结论：DerivedData 跨 runner
+      # 无法增量（XCBuild 对恢复的 build.db 判定全部输入过期 → 全量重编）；ccache 亦因
+      # XCBuild 传 -sourceDependencies:directives 而无法缓存 pod 编译。故每次构建仍全量编译。
       - name: Restore native ios project
         id: restore-ios
         uses: actions/cache/restore@v4
@@ -51,40 +51,8 @@ jobs:
         working-directory: apps/expo
         run: npx expo prebuild --platform ios --no-install
 
-      # ccache：内容寻址编译缓存。恢复的 DerivedData 已被证明无法跨 runner 增量（XCBuild 对恢复的
-      # build.db 判定全部输入过期 → 全量重编）；ccache 按源码内容+编译参数命中，不依赖 mtime/build.db。
-      - name: Install ccache
-        run: |
-          brew install ccache
-          ccache --version
-          # 生成 wrapper，绕过 ccache 不支持的调用（直调真实 clang，不缓存）：
-          #  - 宏探测 clang -v -E -dM …（ccache 的 Apple-clang 路径处理会失败）；
-          #  - -sourceDependencies:directives（Xcode 26 依赖扫描参数，ccache 4.13.6/
-          #    master 均硬编码 unsupported，无 sloppiness 可解；若它在独立扫描调用上，
-          #    绕过后真正的 -c 编译仍可走 ccache 缓存）。
-          # 其余编译走 ccache。真实编译器路径用 xcrun 运行时解析，避免硬编码 Xcode 版本号。
-          mkdir -p "$HOME/ccache-bin"
-          REAL_CC="$(xcrun -f clang)"
-          REAL_CXX="$(xcrun -f clang++)"
-          for pair in "clang|$REAL_CC" "clang++|$REAL_CXX"; do
-            name="${pair%%|*}"; real="${pair#*|}"
-            printf '#!/bin/bash\nfor a in "$@"; do\n  [ "$a" = "-dM" ] && exec "%s" "$@"\n  case "$a" in -sourceDependencies:directives*) exec "%s" "$@";; esac\ndone\nexec /opt/homebrew/bin/ccache "%s" "$@"\n' \
-              "$real" "$real" "$real" > "$HOME/ccache-bin/$name"
-            chmod +x "$HOME/ccache-bin/$name"
-          done
-          # ccache 配置写在构建步骤（restore 之后）的 $CCACHE_DIR/ccache.conf：
-          # CCACHE_DIR env 设置后 ccache 只读 $CCACHE_DIR/ccache.conf，不回退
-          # ~/.ccache/ccache.conf（本机实测）。漏写则 depend_mode/modules 失效 →
-          # -fmodules 编译 100% uncacheable（此前 6 轮 0/2108、0.02MiB 的根因）。
-          # 见下方 Build & install Release app 步骤。
-
-      - name: Restore ccache cache
-        uses: actions/cache@v4
-        with:
-          path: ~/Library/Caches/ccache
-          key: ios-ccache-v2-${{ hashFiles('apps/expo/app.json', 'apps/expo/package.json', 'package-lock.json', 'patches/**') }}
-          restore-keys: ios-ccache-v2-
-
+      # 无 DerivedData 缓存：实测恢复的 DerivedData 被 XCBuild 判全部输入过期（build.db
+      # 跨 runner 失效），每次全量重编 → 缓存只会浪费 ~2GB 上传/下载时间。
       # CocoaPods：pod 源码 + CDN spec 索引，内容寻址，按依赖 hash 作 key（不膨胀）
       - name: Restore CocoaPods cache
         uses: actions/cache@v4
@@ -113,48 +81,18 @@ jobs:
           "$HOME/.maestro/bin/maestro" --version
 
       # Release + 内嵌 JS bundle → 不依赖 Metro；--device 指向已开机的模拟器。
-      # 命中 ios/ 缓存时加 --no-install：expo 按「临时预构建目录里的依赖变更标记」决定是否重跑
-      # pod install，冷 runner 上没有该标记 → 每轮重装 pods；--no-install 直接跳过。
-      # CC/CXX 指向 ccache：pod 的 ObjC/C++（RNSVG/Reanimated/Screens…）按内容命中免重编；
-      # Swift 文件 ccache 不缓存但数量少。构建末尾 ccache -s 输出命中率便于诊断。
+      # 命中 ios/ 缓存时加 --no-install：expo 靠「临时预构建目录里的依赖变更标记」决定是否重跑
+      # pod install，冷 runner 上没有该标记 → 每轮都重装 pods。跳过可省 pod install 时间。
       - name: Build & install Release app
         working-directory: apps/expo
         env:
           EXPO_DEBUG: '1'
         run: |
-          export CCACHE_DIR="$HOME/Library/Caches/ccache"
-          export CCACHE_COMPRESS=1
-          export CCACHE_MAXSIZE=2G
-          # RN pods 用 -fmodules：需 depend mode + modules sloppiness 才可缓存
-          # （缺任一个 ccache 报 could_not_use_modules，全部编译 uncacheable）。
-          export CCACHE_DEPEND=1
-          export CCACHE_SLOPPINESS=clang_index_store,time_macros,modules
-          # 配置写入两处，覆盖 XCBuild 子进程 env 的两种可能：
-          #  A) 传递 CCACHE_DIR → ccache 读 $CCACHE_DIR/ccache.conf（本机实测）；
-          #  B) 剥离 CCACHE_DIR（已证其剥离 PATH）→ ccache 读 ~/.ccache/ccache.conf。
-          # 缺 depend_mode+modules sloppiness → -fmodules 编译全部 could_not_use_modules，
-          # 此前 6 轮 2108/2108 uncacheable、缓存 0.02MiB 的根因即配置没被读到。
-          # cache_dir 指向 ~/Library/Caches/ccache（=下方 actions/cache 的 path），
-          # 保证 ccache 写入落在缓存路径上；log_file 供下方诊断 uncacheable 原因。
-          # ivfsoverlay sloppiness：XCBuild 的编译命令带 -ivfsoverlay（VFS overlay，
-          # 用于 Swift 模块 header map / 生成文件），缺它 ccache 判 unsupported_compiler_option。
-          mkdir -p "$HOME/.ccache" "$HOME/Library/Caches/ccache"
-          printf 'cache_dir = %s/Library/Caches/ccache\nmax_size = 2.0G\ncompression = true\nsloppiness = clang_index_store,time_macros,modules,ivfsoverlay\ndepend_mode = true\nlog_file = %s/Library/Caches/ccache.log\n' \
-            "$HOME" "$HOME" > "$HOME/.ccache/ccache.conf"
-          cp "$HOME/.ccache/ccache.conf" "$HOME/Library/Caches/ccache/ccache.conf"
-          # CC/CXX 指向 Install ccache 步骤生成的 wrapper：-dM 宏探测直调真实 clang
-          # （ccache 的 Apple-clang 路径处理该探测会失败），其余编译走 ccache。
-          export CC="$HOME/ccache-bin/clang"
-          export CXX="$HOME/ccache-bin/clang++"
           INSTALL_FLAG=""
           if [ "${{ steps.restore-ios.outputs.cache-hit }}" = "true" ]; then
             INSTALL_FLAG="--no-install"
           fi
           npx expo run:ios --configuration Release --no-bundler $INSTALL_FLAG --device "$UDID"
-          echo "── ccache stats ──"
-          ccache -s
-          echo "── uncacheable reasons ──"
-          grep -E "unsupported|Result:" "$HOME/Library/Caches/ccache.log" 2>/dev/null | sort | uniq -c | sort -rn | head -15
 
       # pod install 在构建步骤内执行后，ios/Pods 才齐 → 这里保存 ios/ 缓存（含 Pods）。
       # 仅 prebuild 跑过（缓存未命中）时保存，命中轮不重复上传。
