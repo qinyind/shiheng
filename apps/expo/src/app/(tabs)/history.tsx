@@ -1,10 +1,12 @@
-import { useRouter } from "expo-router";
-import { useMemo } from "react";
+import { useRouter, useFocusEffect } from "expo-router";
+import { useCallback, useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { setStatusBarStyle } from "expo-status-bar";
 import { round, targetsFor, type SavedEntry } from "@diet/domain";
 import { formatDate } from "../../components/DayToolbar";
 import { sumSaved, useMealStore } from "../../store/mealStore";
-import { colors, font, radius, spacing } from "../../theme/tokens";
+import { colors, radius, spacing } from "../../theme/tokens";
 
 type Row = {
   dateKey: string;
@@ -19,6 +21,13 @@ export default function HistoryScreen() {
   const dayTypes = useMealStore((state) => state.dayTypes);
   const profile = useMealStore((state) => state.profile);
   const setDate = useMealStore((state) => state.setDate);
+  const insets = useSafeAreaInsets();
+
+  useFocusEffect(
+    useCallback(() => {
+      setStatusBarStyle("dark");
+    }, []),
+  );
 
   const rows = useMemo<Row[]>(() => {
     const map = new Map<string, SavedEntry[]>();
@@ -43,11 +52,10 @@ export default function HistoryScreen() {
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Text style={styles.eyebrow}>06 · 历史记录</Text>
-      <Text style={styles.title}>每天的变化，都留得住</Text>
-      <Text style={styles.body}>记录按日期保存在当前设备；每一天会锁定当时的方案、体重和目标，之后调整参数不会改写旧记录。</Text>
-
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + 49 + spacing.lg }]}
+    >
       {rows.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyIcon}>○</Text>
@@ -60,9 +68,7 @@ export default function HistoryScreen() {
             <Pressable style={styles.row} key={row.dateKey} onPress={() => openRecord(row.dateKey)}>
               <View style={styles.rowLeft}>
                 <Text style={styles.rowDate}>{formatDate(row.dateKey).split(" ")[0]}</Text>
-                <Text style={styles.rowMeta}>
-                  {row.dayType === "training" ? "力训日" : "休息日"} · {profile.weight}kg
-                </Text>
+                <Text style={styles.rowMeta}>{row.dayType === "training" ? "力训日" : "休息日"}</Text>
               </View>
               <View style={styles.rowMacros}>
                 <Text style={styles.rowMacro}>C {round(row.total.carbs)}g</Text>
@@ -73,7 +79,6 @@ export default function HistoryScreen() {
                 <Text style={[styles.rowPct, row.completion > 110 && styles.rowOver]}>{row.completion}%</Text>
                 <Text style={styles.rowKcal}>{round(row.total.kcal)} kcal</Text>
               </View>
-              <Text style={styles.rowArrow}>→</Text>
             </Pressable>
           ))}
         </View>
@@ -84,10 +89,7 @@ export default function HistoryScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paper },
-  content: { padding: spacing.lg, paddingBottom: 40, gap: spacing.md },
-  eyebrow: { fontSize: font.eyebrow, fontWeight: "800", letterSpacing: 1, color: colors.green, textTransform: "uppercase" },
-  title: { fontSize: font.h2, fontWeight: "800", color: colors.ink, letterSpacing: -0.3 },
-  body: { fontSize: 13, lineHeight: 20, color: colors.muted },
+  content: { padding: spacing.lg, gap: spacing.md },
   empty: { alignItems: "center", paddingVertical: 48, gap: 8 },
   emptyIcon: { fontSize: 34, color: colors.line },
   emptyTitle: { fontSize: 16, fontWeight: "800", color: colors.ink },
@@ -103,5 +105,4 @@ const styles = StyleSheet.create({
   rowPct: { fontSize: 16, fontWeight: "800", color: colors.green },
   rowOver: { color: colors.red },
   rowKcal: { fontSize: 11, color: colors.muted },
-  rowArrow: { fontSize: 15, color: colors.muted },
 });

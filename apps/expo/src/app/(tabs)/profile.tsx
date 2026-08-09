@@ -1,7 +1,10 @@
-import { Picker } from "@react-native-picker/picker";
-import { useRouter } from "expo-router";
+import { useCallback } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { setStatusBarStyle } from "expo-status-bar";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PLAN_OPTIONS, round, type Goal, type Level, type Sex, type Timing } from "@diet/domain";
+import { SelectField, type SelectOption } from "../../components/SelectField";
 import { calcFor, effectiveDayType, planLabel, useMealStore } from "../../store/mealStore";
 import { colors, font, radius, spacing } from "../../theme/tokens";
 
@@ -13,6 +16,13 @@ export default function ProfileScreen() {
   const updateProfile = useMealStore((state) => state.updateProfile);
   const changePlan = useMealStore((state) => state.changePlan);
   const store = useMealStore();
+  const insets = useSafeAreaInsets();
+
+  useFocusEffect(
+    useCallback(() => {
+      setStatusBarStyle("dark");
+    }, []),
+  );
 
   const calc = calcFor(store);
   const bmi = profile.weight / (profile.height / 100) ** 2;
@@ -20,9 +30,26 @@ export default function ProfileScreen() {
   const label = planLabel(store);
   const planValue = `${profile.goal}:${profile.timing}`;
 
+  const planOptions: SelectOption[] = PLAN_OPTIONS.map((option) => ({
+    label: option.label,
+    value: `${option.goal}:${option.timing}`,
+  }));
+  const sexOptions: SelectOption[] = [
+    { label: "男", value: "male" },
+    { label: "女", value: "female" },
+  ];
+  const levelOptions: SelectOption[] = [
+    { label: "新手", value: "beginner" },
+    { label: "有基础", value: "intermediate" },
+    { label: "老手", value: "advanced" },
+  ];
+
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-      <Text style={styles.eyebrow}>01 · 建立今日目标</Text>
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + 49 + spacing.lg }]}
+      keyboardShouldPersistTaps="handled"
+    >
       <Text style={styles.title}>{label}</Text>
 
       <View style={styles.quick}>
@@ -46,46 +73,25 @@ export default function ProfileScreen() {
 
       <View style={styles.form}>
         <Text style={styles.label}>训练方案</Text>
-        <View style={styles.pickerBox}>
-          <Picker
-            selectedValue={planValue}
-            onValueChange={(value) => {
-              const [goal, timing] = value.split(":") as [Goal, Timing];
-              changePlan(goal, timing);
-            }}
-            style={styles.picker}
-          >
-            {PLAN_OPTIONS.map((option) => (
-              <Picker.Item key={`${option.goal}:${option.timing}`} label={option.label} value={`${option.goal}:${option.timing}`} />
-            ))}
-          </Picker>
-        </View>
+        <SelectField
+          value={planValue}
+          options={planOptions}
+          onChange={(value) => {
+            const [goal, timing] = value.split(":") as [Goal, Timing];
+            changePlan(goal, timing);
+          }}
+        />
 
         <Text style={styles.label}>性别</Text>
-        <View style={styles.pickerBox}>
-          <Picker
-            selectedValue={profile.sex}
-            onValueChange={(value) => updateProfile("sex", value as Sex)}
-            style={styles.picker}
-          >
-            <Picker.Item label="男" value="male" />
-            <Picker.Item label="女" value="female" />
-          </Picker>
-        </View>
+        <SelectField value={profile.sex} options={sexOptions} onChange={(value) => updateProfile("sex", value as Sex)} />
 
         <Text style={styles.label}>力训水平</Text>
-        <View style={styles.pickerBox}>
-          <Picker
-            selectedValue={profile.level}
-            enabled={profile.timing !== "none"}
-            onValueChange={(value) => updateProfile("level", value as Level)}
-            style={styles.picker}
-          >
-            <Picker.Item label="新手" value="beginner" />
-            <Picker.Item label="有基础" value="intermediate" />
-            <Picker.Item label="老手" value="advanced" />
-          </Picker>
-        </View>
+        <SelectField
+          value={profile.level}
+          options={levelOptions}
+          enabled={profile.timing !== "none"}
+          onChange={(value) => updateProfile("level", value as Level)}
+        />
 
         {(
           [
@@ -111,7 +117,11 @@ export default function ProfileScreen() {
         ))}
       </View>
 
-      <Text style={styles.formulaNote}>采用 Mifflin–St Jeor 与方案配额系数；结果用于饮食规划，不代替医疗建议。</Text>
+      <Text style={styles.formulaNote}>
+        采用 Mifflin–St Jeor 与方案配额系数；结果用于饮食规划，
+        {"\n"}
+        不代替医疗建议。
+      </Text>
 
       <View style={styles.serverCard}>
         <View style={styles.serverText}>
@@ -132,8 +142,7 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paper },
-  content: { padding: spacing.lg, paddingBottom: 40, gap: spacing.md },
-  eyebrow: { fontSize: font.eyebrow, fontWeight: "800", letterSpacing: 1, color: colors.green, textTransform: "uppercase" },
+  content: { padding: spacing.lg, gap: spacing.md },
   title: { fontSize: font.h2, fontWeight: "800", color: colors.ink, letterSpacing: -0.3 },
   quick: { flexDirection: "row", gap: 8 },
   quickCell: { flex: 1, backgroundColor: colors.card, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, paddingVertical: 12, alignItems: "center" },
@@ -141,8 +150,6 @@ const styles = StyleSheet.create({
   quickLabel: { fontSize: 10, color: colors.muted, marginTop: 3 },
   form: { backgroundColor: colors.card, borderRadius: radius.panel, borderWidth: 1, borderColor: colors.line, padding: spacing.lg, gap: 10 },
   label: { fontSize: font.eyebrow, fontWeight: "800", letterSpacing: 1, color: colors.muted, textTransform: "uppercase", marginTop: 4 },
-  pickerBox: { borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.field, overflow: "hidden" },
-  picker: { height: 46, color: colors.ink },
   numberBox: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.field, paddingHorizontal: 12, height: 46 },
   numberInput: { flex: 1, fontSize: 15, fontWeight: "700", color: colors.ink },
   unit: { fontSize: 12, color: colors.muted },

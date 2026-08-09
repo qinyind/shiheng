@@ -18,7 +18,6 @@
     "@diet/domain": "*",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "~2.2.0",
-    "@react-native-picker/picker": "2.11.4",
     "expo": "~57.0.10",
     "expo-application": "~57.0.2",
     "expo-constants": "~57.0.9",

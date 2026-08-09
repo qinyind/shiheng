@@ -137,8 +137,9 @@ describe("DayToolbar", () => {
     );
 
     expect(screen.getByText(/8月8日/)).toBeTruthy();
-    // dateMeta 与选中段都显示"力训日"。
-    expect(screen.getAllByText("力训日")).toHaveLength(2);
+    // 有训练安排时日型仅由切换段表达（不再在日期下重复），选中段 + 未选中段各一。
+    expect(screen.getAllByText("力训日")).toHaveLength(1);
+    expect(screen.getByText("休息日")).toBeTruthy();
 
     await fireEvent.press(screen.getByLabelText("前一天"));
     expect(onDateChange).toHaveBeenCalledWith(shiftDate("2026-08-08", -1));
@@ -166,7 +167,8 @@ describe("DayToolbar", () => {
         onClear={jest.fn()}
       />,
     );
-    expect(screen.getAllByText("休息日")).toHaveLength(2);
+    // 休息日选中时切换段内只有一个「休息日」文案（日期下不再重复）。
+    expect(screen.getAllByText("休息日")).toHaveLength(1);
     await fireEvent.press(screen.getByText("力训日"));
     expect(onDayTypeChange).toHaveBeenCalledWith("training");
   });
@@ -191,7 +193,6 @@ describe("DayToolbar", () => {
 describe("PlanGuidance", () => {
   test("渲染方案标签、体重/BMI/身高与健康区间提示", async () => {
     await render(<PlanGuidance profile={DEFAULT_PROFILE} dayType="training" bmi={22.5} planLabel="5 减脂 · 晚饭前练" />);
-    expect(screen.getByText("我的方案")).toBeTruthy();
     expect(screen.getByText("5 减脂 · 晚饭前练")).toBeTruthy();
     expect(screen.getByText("73kg")).toBeTruthy();
     expect(screen.getByText("22.5")).toBeTruthy();

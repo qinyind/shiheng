@@ -28,7 +28,8 @@ export function DayToolbar({ date, dayType, timingNone, onDateChange, onDayTypeC
         </Pressable>
         <View style={styles.dateLabelWrap}>
           <Text style={styles.dateLabel}>{formatDate(date)}</Text>
-          <Text style={styles.dateMeta}>{timingNone ? "无训练安排" : dayType === "training" ? "力训日" : "休息日"}</Text>
+          {/* 有训练安排时日型已由下方切换段表达，避免「力训日」重复；无训练时才在此提示 */}
+          {timingNone && <Text style={styles.dateMeta}>无训练安排</Text>}
         </View>
         <Pressable style={styles.step} onPress={() => onDateChange(shiftDate(date, 1))} accessibilityLabel="后一天">
           <Text style={styles.stepText}>›</Text>
@@ -57,16 +58,24 @@ export function DayToolbar({ date, dayType, timingNone, onDateChange, onDayTypeC
 }
 
 const styles = StyleSheet.create({
-  wrap: { backgroundColor: colors.card, borderRadius: radius.panel, borderWidth: 1, borderColor: colors.line, padding: spacing.md, gap: spacing.md },
+  wrap: {
+    backgroundColor: colors.card,
+    borderRadius: radius.panel,
+    borderWidth: 1,
+    borderColor: colors.line,
+    marginHorizontal: spacing.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
   dateRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   step: { width: 34, height: 34, borderRadius: radius.sm, backgroundColor: colors.field, alignItems: "center", justifyContent: "center" },
   stepText: { fontSize: 20, color: colors.ink, fontWeight: "700", marginTop: -2 },
   dateLabelWrap: { flex: 1, alignItems: "center", gap: 2 },
   dateLabel: { fontSize: font.body, fontWeight: "800", color: colors.ink },
   dateMeta: { fontSize: font.eyebrow, color: colors.muted },
-  controls: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.md },
-  seg: { flexDirection: "row", backgroundColor: colors.toggle, borderRadius: radius.pill, padding: 3, gap: 2 },
-  segBtn: { paddingHorizontal: 16, paddingVertical: 7, borderRadius: radius.pill },
+  controls: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  seg: { flex: 1, flexDirection: "row", backgroundColor: colors.toggle, borderRadius: radius.pill, padding: 3, gap: 2 },
+  segBtn: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 7, borderRadius: radius.pill },
   segBtnActive: { backgroundColor: colors.green },
   segText: { fontSize: 13, fontWeight: "700", color: colors.muted },
   segTextActive: { color: colors.white },

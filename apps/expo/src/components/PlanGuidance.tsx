@@ -15,7 +15,6 @@ export function PlanGuidance({ profile, dayType, bmi, planLabel }: Props) {
   const bmiNote = bmi < 18.5 ? "体重偏低，建议以增肌 / 维持为主" : bmi > 24 ? "BMI 偏高，建议控制能量摄入" : "体重在健康区间，保持当前节奏";
   return (
     <View style={styles.card}>
-      <Text style={styles.eyebrow}>我的方案</Text>
       <Text style={styles.title}>{planLabel}</Text>
       <View style={styles.stats}>
         <View style={styles.stat}>
@@ -37,8 +36,13 @@ export function PlanGuidance({ profile, dayType, bmi, planLabel }: Props) {
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: colors.formula, borderRadius: radius.panel, padding: spacing.lg, gap: spacing.sm },
-  eyebrow: { fontSize: font.eyebrow, fontWeight: "800", letterSpacing: 1, color: colors.green, textTransform: "uppercase" },
+  card: {
+    backgroundColor: colors.formula,
+    borderRadius: radius.panel,
+    marginHorizontal: spacing.lg,
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
   title: { fontSize: font.h2, fontWeight: "800", color: colors.ink, letterSpacing: -0.3 },
   stats: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
   stat: { flex: 1, backgroundColor: colors.card, borderRadius: radius.md, paddingVertical: 10, alignItems: "center", gap: 2 },

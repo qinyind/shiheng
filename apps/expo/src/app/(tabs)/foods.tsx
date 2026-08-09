@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { useFocusEffect } from "expo-router";
+import { useCallback, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { setStatusBarStyle } from "expo-status-bar";
 import { round, type Macro } from "@diet/domain";
 import { useMealStore } from "../../store/mealStore";
 import { colors, font, radius, spacing } from "../../theme/tokens";
@@ -13,6 +16,13 @@ export default function FoodsScreen() {
 
   const [formOpen, setFormOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>({ name: "", carbs: "0", protein: "0", fat: "0", kcal: "" });
+  const insets = useSafeAreaInsets();
+
+  useFocusEffect(
+    useCallback(() => {
+      setStatusBarStyle("dark");
+    }, []),
+  );
 
   function confirmDelete(id: string, name: string) {
     Alert.alert("删除食材？", `确定从食材库删除“${name}”吗？已记录的历史餐次不会受影响。`, [
@@ -38,7 +48,11 @@ export default function FoodsScreen() {
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + 49 + spacing.lg }]}
+      keyboardShouldPersistTaps="handled"
+    >
       <View style={styles.heading}>
         <View style={styles.headingText}>
           <Text style={styles.eyebrow}>我的食材</Text>
@@ -108,7 +122,7 @@ export default function FoodsScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paper },
-  content: { padding: spacing.lg, paddingBottom: 40, gap: spacing.md },
+  content: { padding: spacing.lg, gap: spacing.md },
   heading: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   headingText: { gap: 4 },
   eyebrow: { fontSize: font.eyebrow, fontWeight: "800", letterSpacing: 1, color: colors.green, textTransform: "uppercase" },

@@ -3,12 +3,12 @@ import Svg, { Circle } from "react-native-svg";
 import { round } from "@diet/domain";
 import { colors } from "../theme/tokens";
 
-type Props = { kcal: number; target: number; progress: number };
+type Props = { kcal: number; target: number; progress: number; size?: number };
 
 // 热量环：react-native-svg 圆环（替代 Web 版 conic-gradient）。progress ∈ [0,1]。
-export function CalorieRing({ kcal, target, progress }: Props) {
-  const size = 180;
-  const strokeWidth = 14;
+// size 可调：今日页配额卡并排布局用 110，默认 140。
+export function CalorieRing({ kcal, target, progress, size = 140 }: Props) {
+  const strokeWidth = 12;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const clamped = Math.min(1, Math.max(0, progress));
@@ -16,12 +16,12 @@ export function CalorieRing({ kcal, target, progress }: Props) {
   return (
     <View style={styles.wrap}>
       <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <Circle cx={size / 2} cy={size / 2} r={radius} stroke="rgba(255,255,255,.18)" strokeWidth={strokeWidth} fill="none" />
+        <Circle cx={size / 2} cy={size / 2} r={radius} stroke={colors.line} strokeWidth={strokeWidth} fill="none" />
         <Circle
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke={over ? colors.red : colors.lime}
+          stroke={over ? colors.red : colors.green}
           strokeWidth={strokeWidth}
           fill="none"
           strokeDasharray={`${circumference}`}
@@ -41,7 +41,7 @@ export function CalorieRing({ kcal, target, progress }: Props) {
 const styles = StyleSheet.create({
   wrap: { alignItems: "center", justifyContent: "center", position: "relative" },
   center: { position: "absolute", alignItems: "center" },
-  kcal: { color: colors.summaryText, fontSize: 34, fontWeight: "800", letterSpacing: -1 },
+  kcal: { color: colors.ink, fontSize: 28, fontWeight: "800", letterSpacing: -1 },
   over: { color: colors.red },
-  suffix: { color: "rgba(255,255,255,.6)", fontSize: 13, marginTop: 2 },
+  suffix: { color: colors.muted, fontSize: 12, marginTop: 1 },
 });

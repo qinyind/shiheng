@@ -1,7 +1,22 @@
 /// <reference types="jest" />
 import { act, render, screen } from "@testing-library/react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import TodayScreen from "../app/(tabs)/index";
 import { useMealStore } from "../store/mealStore";
+
+// 首页自 plan C 起调用 useSafeAreaInsets() → 测试需提供 SafeAreaProvider。
+// initialMetrics 固定 insets，使布局在 jest 环境下确定。
+const SAFE_AREA_METRICS = {
+  frame: { x: 0, y: 0, width: 390, height: 844 },
+  insets: { top: 47, left: 0, right: 0, bottom: 34 },
+};
+function renderTodayScreen() {
+  return render(
+    <SafeAreaProvider initialMetrics={SAFE_AREA_METRICS}>
+      <TodayScreen />
+    </SafeAreaProvider>,
+  );
+}
 
 jest.mock("@react-native-async-storage/async-storage", () => ({
   __esModule: true,
@@ -20,6 +35,8 @@ jest.mock("expo-secure-store", () => ({
 const mockPush = jest.fn();
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: mockPush, back: jest.fn(), replace: jest.fn() }),
+  // 首页 plan B 起调用 useFocusEffect 切换状态栏样式；测试里直接执行回调即可。
+  useFocusEffect: (effect: () => void) => effect(),
 }));
 
 const initialMealState = useMealStore.getState();
@@ -36,16 +53,17 @@ describe("TodayScreen store 访问稳定性（#185 派生模式）", () => {
   test("首页整 store 订阅 + 派生渲染不触发无限重渲染", async () => {
     // 与 add-food 相同模式：const store = useMealStore(); 再 mealsFor/dailyTarget/calcFor/planLabel 派生。
     // 若这些函数被当作 selector 直接传 useMealStore(...)，getSnapshot 不稳定 → 无限重渲染抛错。
-    await expect(render(<TodayScreen />)).resolves.toBeDefined();
+    await expect(renderTodayScreen()).resolves.toBeDefined();
     // 关键派生数据渲染出来。
     expect(screen.getByText("食衡")).toBeTruthy();
     expect(screen.getByText("早饭")).toBeTruthy();
     expect(screen.getByText("晚饭 · 练后")).toBeTruthy();
-    expect(screen.getByText("我的方案")).toBeTruthy();
+    // PlanGuidance 标题：默认方案为「N 减脂 · …」
+    expect(screen.getAllByText(/减脂/).length).toBeGreaterThan(0);
   });
 
   test("store 动作（加餐/清空/改日/改日型）驱动重渲染不进入重渲染循环", async () => {
-    await render(<TodayScreen />);
+    await renderTodayScreen();
 
     // 加餐 → 对应餐卡的条目出现。
     await act(async () => {

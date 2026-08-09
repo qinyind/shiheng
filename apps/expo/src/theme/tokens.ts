@@ -1,30 +1,32 @@
 import { Platform } from "react-native";
 
 // 与 Web 版 app/globals.css 的 12 色 token 保持一致，保证三端观感统一。
+// B 色板（暖绿洗净）：保留暖纸底，去掉双绿墙；宏量色橙/绿/金与主绿不撞。
 export const colors = {
-  ink: "#18211b",
-  muted: "#68736b",
-  paper: "#f3f1e8",
-  card: "#fffef9",
-  line: "#d9ddd4",
-  green: "#0d6b4d",
-  lime: "#b9e44c",
-  orange: "#ff8b4a",
-  red: "#df4e42",
-  carb: "#f4a261",
-  protein: "#4f8f78",
-  fat: "#c8b544",
-  // globals.css 中出现的次级填充色
-  field: "#f7f7f2",
-  quick: "#f0f2ec",
-  formula: "#eef2eb",
-  toggle: "#f2f4ee",
-  heroText: "#f7faee",
-  summaryText: "#f8f9f3",
-  heroTextSoft: "rgba(255,255,255,.75)",
-  dangerBg: "#fdecea",
-  successBg: "#eef6d9",
-  successBorder: "#cadca4",
+  ink: "#1a221c",
+  muted: "#6a7268",
+  paper: "#f7f5f0",
+  card: "#fffefb",
+  line: "#e5e2d8",
+  green: "#1b5e4a",
+  lime: "#c5d96a",
+  orange: "#e09a5a",
+  red: "#d6453d",
+  carb: "#e09a5a",
+  protein: "#4a9a7a",
+  fat: "#c4a84a",
+  // 次级填充色（暖系灰绿，承接纸底）
+  field: "#f5f2eb",
+  quick: "#f0eee6",
+  formula: "#f0eee6",
+  toggle: "#f0eee6",
+  heroText: "#f8faf3",
+  heroTextSoft: "rgba(255,255,255,.78)",
+  // 配额卡独立于普通卡片的绿调描边
+  sumBorder: "#cfd8c8",
+  dangerBg: "#fdeee9",
+  successBg: "#f0f4dd",
+  successBorder: "#d3dcae",
   white: "#ffffff",
 } as const;
 

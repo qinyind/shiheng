@@ -68,7 +68,15 @@ export function MealCard({ meal, target, entries, goal, dayType, onAddFood, onRe
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: colors.card, borderRadius: radius.panel, borderWidth: 1, borderColor: colors.line, padding: spacing.lg, gap: spacing.md },
+  card: {
+    backgroundColor: colors.card,
+    borderRadius: radius.panel,
+    borderWidth: 1,
+    borderColor: colors.line,
+    marginHorizontal: spacing.lg,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
   head: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: spacing.md },
   headText: { flex: 1, gap: 2 },
   mealName: { fontSize: font.body, fontWeight: "800", color: colors.ink },
