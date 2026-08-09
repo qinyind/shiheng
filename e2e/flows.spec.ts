@@ -65,12 +65,10 @@ async function addLunchRice(page: Page) {
 // ---------------------------------------------------------------------------
 // 1. 首页渲染默认数据
 // ---------------------------------------------------------------------------
-test('首页渲染默认数据（73kg / BMI / 1738 kcal / 108g 蛋白 / 力训日）', async ({ page }) => {
+test('首页渲染默认数据（1738 kcal / 108g 蛋白 / 力训日）', async ({ page }) => {
   await gotoHome(page)
 
-  // hero 快捷数据
-  await expect(page.getByText('73', { exact: true }).first()).toBeVisible()
-  await expect(page.getByText('22.5', { exact: true }).first()).toBeVisible()
+  // hero 快捷数据（体重/BMI 已按精简需求移除，只保留 kcal + 蛋白质）
   await expect(page.getByText('1738', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('108', { exact: true }).first()).toBeVisible()
 
@@ -169,12 +167,11 @@ test('历史页：有记录时渲染历史行', async ({ page }) => {
   await expect(page.getByText('熟米饭', { exact: true }).first()).toBeVisible()
   await page.getByRole('tab', { name: '历史' }).click()
 
-  await expect(page.getByText('每天的变化，都留得住').first()).toBeVisible()
   // 不再显示空态
   await expect(page.getByText('还没有历史记录').first()).not.toBeVisible()
-  // 当天行：日期、力训日元信息、汇总 kcal 337
+  // 当天行：日期、力训日元信息（体重已移出）、汇总 kcal 337
   await expect(page.getByText(monthDay(today), { exact: true }).first()).toBeVisible()
-  await expect(page.getByText('力训日 · 73kg').first()).toBeVisible()
+  await expect(page.getByText('力训日', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('337').first()).toBeVisible()
 })
 

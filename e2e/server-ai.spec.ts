@@ -158,11 +158,9 @@ test('配对：填 URL+配对码提交 → pair 被调、token 落盘、回首�
   const pairCall = calls.find((c) => c.method === 'POST' && c.path.endsWith('/v1/auth/pair'))
   expect((pairCall?.body as { pairingCode?: string } | undefined)?.pairingCode).toBe('123456')
 
-  // token 与 serverURL 落盘（localStorage）
-  const token = await page.evaluate((key) => localStorage.getItem(key), TOKEN_KEY)
-  expect(token).toBe(TOKEN)
-  const savedURL = await page.evaluate((key) => localStorage.getItem(key), SERVER_URL_KEY)
-  expect(savedURL).toBe(SERVER_URL)
+  // token 与 serverURL 落盘（localStorage）。pair() 内 serverURL 异步写入，poll 等待落盘而非一次读到旧值
+  await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), TOKEN_KEY)).toBe(TOKEN)
+  await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), SERVER_URL_KEY)).toBe(SERVER_URL)
 
   // 配对后：同步成功 + 按钮切换为「立即同步」
   await expect(page.getByText('已与服务器同步').first()).toBeVisible()
