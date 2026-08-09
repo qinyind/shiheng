@@ -57,16 +57,19 @@ jobs:
         run: |
           brew install ccache
           ccache --version
-          # XCBuild 的宏探测（clang -v -E -dM …）走 ccache 的 Apple-clang 路径会失败；
-          # 生成 wrapper：探测（含 -dM）直调真实 clang 绕过 ccache，其余编译走 ccache。
-          # 真实编译器路径用 xcrun 运行时解析，避免硬编码 Xcode 版本号。
+          # 生成 wrapper，绕过 ccache 不支持的调用（直调真实 clang，不缓存）：
+          #  - 宏探测 clang -v -E -dM …（ccache 的 Apple-clang 路径处理会失败）；
+          #  - -sourceDependencies:directives（Xcode 26 依赖扫描参数，ccache 4.13.6/
+          #    master 均硬编码 unsupported，无 sloppiness 可解；若它在独立扫描调用上，
+          #    绕过后真正的 -c 编译仍可走 ccache 缓存）。
+          # 其余编译走 ccache。真实编译器路径用 xcrun 运行时解析，避免硬编码 Xcode 版本号。
           mkdir -p "$HOME/ccache-bin"
           REAL_CC="$(xcrun -f clang)"
           REAL_CXX="$(xcrun -f clang++)"
           for pair in "clang|$REAL_CC" "clang++|$REAL_CXX"; do
             name="${pair%%|*}"; real="${pair#*|}"
-            printf '#!/bin/bash\nfor a in "$@"; do\n  [ "$a" = "-dM" ] && exec "%s" "$@"\ndone\nexec /opt/homebrew/bin/ccache "%s" "$@"\n' \
-              "$real" "$real" > "$HOME/ccache-bin/$name"
+            printf '#!/bin/bash\nfor a in "$@"; do\n  [ "$a" = "-dM" ] && exec "%s" "$@"\n  case "$a" in -sourceDependencies:directives*) exec "%s" "$@";; esac\ndone\nexec /opt/homebrew/bin/ccache "%s" "$@"\n' \
+              "$real" "$real" "$real" > "$HOME/ccache-bin/$name"
             chmod +x "$HOME/ccache-bin/$name"
           done
           # ccache 配置写在构建步骤（restore 之后）的 $CCACHE_DIR/ccache.conf：
@@ -133,8 +136,10 @@ jobs:
           # 此前 6 轮 2108/2108 uncacheable、缓存 0.02MiB 的根因即配置没被读到。
           # cache_dir 指向 ~/Library/Caches/ccache（=下方 actions/cache 的 path），
           # 保证 ccache 写入落在缓存路径上；log_file 供下方诊断 uncacheable 原因。
+          # ivfsoverlay sloppiness：XCBuild 的编译命令带 -ivfsoverlay（VFS overlay，
+          # 用于 Swift 模块 header map / 生成文件），缺它 ccache 判 unsupported_compiler_option。
           mkdir -p "$HOME/.ccache" "$HOME/Library/Caches/ccache"
-          printf 'cache_dir = %s/Library/Caches/ccache\nmax_size = 2.0G\ncompression = true\nsloppiness = clang_index_store,time_macros,modules\ndepend_mode = true\nlog_file = %s/Library/Caches/ccache.log\n' \
+          printf 'cache_dir = %s/Library/Caches/ccache\nmax_size = 2.0G\ncompression = true\nsloppiness = clang_index_store,time_macros,modules,ivfsoverlay\ndepend_mode = true\nlog_file = %s/Library/Caches/ccache.log\n' \
             "$HOME" "$HOME" > "$HOME/.ccache/ccache.conf"
           cp "$HOME/.ccache/ccache.conf" "$HOME/Library/Caches/ccache/ccache.conf"
           # CC/CXX 指向 Install ccache 步骤生成的 wrapper：-dM 宏探测直调真实 clang
@@ -149,7 +154,7 @@ jobs:
           echo "── ccache stats ──"
           ccache -s
           echo "── uncacheable reasons ──"
-          grep -oE "Result: [a-z_]+" "$HOME/Library/Caches/ccache.log" 2>/dev/null | sort | uniq -c | sort -rn | head -10
+          grep -E "unsupported|Result:" "$HOME/Library/Caches/ccache.log" 2>/dev/null | sort | uniq -c | sort -rn | head -15
 
       # pod install 在构建步骤内执行后，ios/Pods 才齐 → 这里保存 ios/ 缓存（含 Pods）。
       # 仅 prebuild 跑过（缓存未命中）时保存，命中轮不重复上传。
