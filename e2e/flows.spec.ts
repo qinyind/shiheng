@@ -193,3 +193,39 @@ test('数据持久化：加餐后 reload 条目仍在（localStorage）', async 
   await expect(page.getByText('100g', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('133', { exact: true }).first()).toBeVisible()
 })
+
+// ---------------------------------------------------------------------------
+// 7. 回归：切换方案后 pre 条目不被迁移改写
+// ---------------------------------------------------------------------------
+test('回归：timing 变更后 pre 条目不被迁移改写（mealID 保持 pre）', async ({ page }) => {
+  // 模拟：条目在旧 timing（beforeDinner 的练前餐=pre）记录，后切换为 afterDinner。
+  // 旧代码的 applyState 迁移会把 pre 静默改写成 dinner；修复后必须保持 pre。
+  const today = todayKey()
+  await seedState(page, {
+    profile: { ...DEFAULT_PROFILE, timing: 'afterDinner' },
+    entries: [
+      { id: 'e1', dateKey: today, mealID: 'pre', foodName: '香蕉', grams: 100, per100: { carbs: 22, protein: 1.1, fat: 0.3, kcal: 89 } },
+    ],
+    customFoods: [],
+    dayTypes: { [today]: 'training' },
+    deletedEntryIDs: [],
+    deletedFoodIDs: [],
+  })
+
+  await gotoHome(page)
+  // 等 hydration 的持久化订阅把状态写回 localStorage（Web 端为同步 setItem）
+  await page.waitForFunction((key) => {
+    const raw = localStorage.getItem(key)
+    if (!raw) return false
+    try {
+      const s = JSON.parse(raw)
+      return Array.isArray(s.entries) && s.entries.some((e: { id: string }) => e.id === 'e1')
+    } catch {
+      return false
+    }
+  }, STATE_KEY)
+
+  const stored = await page.evaluate((key) => localStorage.getItem(key), STATE_KEY)
+  const parsed = stored ? JSON.parse(stored) : null
+  expect(parsed.entries.find((e: { id: string }) => e.id === 'e1').mealID).toBe('pre')
+})

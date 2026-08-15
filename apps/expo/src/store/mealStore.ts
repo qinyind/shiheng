@@ -5,8 +5,8 @@ import {
   REST_MEALS,
   calculate,
   foodNameKey,
+  maybeMigrateEntries,
   merge,
-  migrateEntries,
   normalizeStoredState,
   targetsFor,
   todayString,
@@ -116,7 +116,7 @@ export const useMealStore = create<MealStoreState>((set, get) => {
   function applyState(state: SavedState) {
     const tombstonedEntries = new Set(state.deletedEntryIDs);
     const tombstonedFoods = new Set(state.deletedFoodIDs);
-    const entries = migrateEntries(
+    const entries = maybeMigrateEntries(
       state.entries.filter((entry) => !tombstonedEntries.has(entry.id)),
       state.profile.timing,
     );

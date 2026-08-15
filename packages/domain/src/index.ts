@@ -27,7 +27,9 @@ export { keyForDate, shiftDate, todayString } from "./dates.ts";
 export {
   LEGACY_MEAL_ID_MAP,
   fromWebState,
+  hasLegacyMealIDs,
   legacyMealIDMapFor,
+  maybeMigrateEntries,
   migrateDayLog,
   migrateDayLogs,
   migrateEntries,
