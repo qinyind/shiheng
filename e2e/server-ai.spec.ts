@@ -71,6 +71,8 @@ type StubOptions = {
   putConflict?: Envelope // 第一次 PUT 返回 409 + 该信封（乐观锁冲突）
   putResponse?: Envelope
   estimate?: unknown // /v1/ai/analyze-food 的 estimate
+  holdGetSync?: { promise: Promise<void> } // 挂起 GET /v1/sync 直到 resolve（模拟慢网同步在途）
+  holdPutSync?: { promise: Promise<void> } // 挂起 PUT /v1/sync 直到 resolve（模拟 push 在途）
   onRequest?: (method: string, path: string, body?: unknown) => void
 }
 
@@ -114,8 +116,12 @@ async function stubServer(page: Page, opts: StubOptions) {
       return json({ estimate: opts.estimate })
     }
     if (path.endsWith('/v1/sync')) {
-      if (method === 'GET') return json(opts.initialSync ?? { version: 1, state: null, updatedAt: null })
+      if (method === 'GET') {
+        if (opts.holdGetSync) await opts.holdGetSync.promise
+        return json(opts.initialSync ?? { version: 1, state: null, updatedAt: null })
+      }
       if (method === 'PUT') {
+        if (opts.holdPutSync) await opts.holdPutSync.promise
         putCount += 1
         if (opts.putConflict && putCount === 1) return json(opts.putConflict, 409)
         return json(opts.putResponse ?? { version: 1, state: null, updatedAt: null })
@@ -127,6 +133,25 @@ async function stubServer(page: Page, opts: StubOptions) {
 
 async function gotoHome(page: Page) {
   await page.goto('/')
+  await expect(page.getByText('食衡').first()).toBeVisible()
+}
+
+// 可控 promise：测试手动 resolve 来放行被挂起的请求（模拟慢网同步在途）。
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void
+  const promise = new Promise<void>((r) => {
+    resolve = r
+  })
+  return { promise, resolve }
+}
+
+// 走完整 UI 加餐流程：在「午饭」添加 100g 熟米饭（与 flows.spec.ts 一致）。
+async function addLunchRice(page: Page) {
+  await page.getByLabel('在午饭添加食物').click()
+  await expect(page.getByText('本餐推荐：').first()).toBeVisible()
+  await page.getByText('熟米饭', { exact: true }).click()
+  await page.getByLabel('克数').fill('100')
+  await page.getByText('添加', { exact: true }).click()
   await expect(page.getByText('食衡').first()).toBeVisible()
 }
 
@@ -263,6 +288,72 @@ test('同步：PUT 409 冲突时取 latest 合并重试，不崩溃且最终一�
 
   // 最终状态一致（已同步，未崩溃）
   await expect(page.getByText('云端已同步').first()).toBeVisible()
+})
+
+// ---------------------------------------------------------------------------
+// 2c. 同步流：同步在途时新记录的餐不被旧快照覆盖丢失（数据丢失回归）
+// ---------------------------------------------------------------------------
+test('同步：同步在途时新记录的餐不被旧快照覆盖丢失', async ({ page }) => {
+  const hold = deferred()
+  const requests: string[] = []
+  await seedPaired(page, emptyState())
+  await stubServer(page, {
+    holdGetSync: { promise: hold.promise },
+    putResponse: { version: 2, state: null, updatedAt: '2026-08-08T10:00:02.000Z' },
+    onRequest: (method, path) => requests.push(`${method} ${path}`),
+  })
+
+  await gotoHome(page)
+  // 自动同步启动：GET 已发出（挂起中 = 同步在途）
+  await expect.poll(() => requests.some((r) => r === 'GET /v1/sync')).toBe(true)
+
+  // 同步在途时用户加餐（旧代码用同步开始时的旧快照，会把这餐整体覆盖丢掉）
+  await addLunchRice(page)
+
+  // 放行 GET，同步继续
+  hold.resolve()
+  await expect.poll(() => requests.some((r) => r === 'PUT /v1/sync')).toBe(true)
+
+  // 新记录的餐必须仍在：UI 与 localStorage（持久化订阅写回）
+  await expect(page.getByText('熟米饭', { exact: true }).first()).toBeVisible()
+  const stored = await page.evaluate((key) => JSON.parse(localStorage.getItem(key) || '{}'), STATE_KEY)
+  const names = (stored.entries ?? []).map((e: { foodName: string }) => e.foodName)
+  expect(names).toContain('熟米饭')
+})
+
+// ---------------------------------------------------------------------------
+// 2d. 同步流：push 在途时新记录的餐不被同步结果覆盖丢失（apply 前 re-read 回归）
+// ---------------------------------------------------------------------------
+test('同步：push 在途时新记录的餐不被同步结果覆盖丢失', async ({ page }) => {
+  // 覆盖 syncNow 的 push 窗口（apply 前再次用最新 get() 合并）。
+  // 若 revert 掉 apply 前的 re-read，这里 merged 在 push 发出时已定形，不含本餐，
+  // applyState(remote.state ?? merged) 会把本餐整体覆盖掉 —— 本测试即失败。
+  const holdPut = deferred()
+  const requests: string[] = []
+  await seedPaired(page, emptyState())
+  await stubServer(page, {
+    initialSync: { version: 1, state: emptyState(), updatedAt: '2026-08-08T09:00:00.000Z' },
+    holdPutSync: { promise: holdPut.promise },
+    putResponse: { version: 2, state: null, updatedAt: '2026-08-08T09:00:02.000Z' },
+    onRequest: (method, path) => requests.push(`${method} ${path}`),
+  })
+
+  await gotoHome(page)
+  // 自动同步：GET 完成、PUT 已发出（挂起中 = push 在途）
+  await expect.poll(() => requests.some((r) => r === 'PUT /v1/sync')).toBe(true)
+
+  // push 在途时用户加餐（merged 在 PUT 发出前已构建，不包含这餐）
+  await addLunchRice(page)
+
+  // 放行 PUT，同步收尾
+  holdPut.resolve()
+  await expect.poll(() => requests.filter((r) => r === 'PUT /v1/sync').length).toBeGreaterThanOrEqual(1)
+
+  // 新记录的餐必须仍在：UI 与 localStorage
+  await expect(page.getByText('熟米饭', { exact: true }).first()).toBeVisible()
+  const stored = await page.evaluate((key) => JSON.parse(localStorage.getItem(key) || '{}'), STATE_KEY)
+  const names = (stored.entries ?? []).map((e: { foodName: string }) => e.foodName)
+  expect(names).toContain('熟米饭')
 })
 
 // ---------------------------------------------------------------------------

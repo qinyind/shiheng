@@ -268,24 +268,28 @@ export const useMealStore = create<MealStoreState>((set, get) => {
     },
 
     syncNow: async () => {
-      const state = get();
       const token = await tokenStore.read();
-      if (!token || !state.serverURL) throw ServerAPI.ServerAPIError.notPaired();
+      const serverURL = get().serverURL;
+      if (!token || !serverURL) throw ServerAPI.ServerAPIError.notPaired();
       set({ syncState: "syncing", syncMessage: null });
       try {
-        let remote = await ServerAPI.fetchState(state.serverURL);
-        let merged = remote.state ? merge(snapshotState(state), remote.state) : snapshotState(state);
+        let remote = await ServerAPI.fetchState(serverURL);
+        // 关键：用「当前最新」本地状态合并，而非同步开始时的旧快照。
+        // fetch 在途时用户可能已加餐/删除/改资料，旧快照整体覆盖会把它们丢掉。
+        let merged = remote.state ? merge(snapshotState(get()), remote.state) : snapshotState(get());
         try {
-          remote = await ServerAPI.pushState(state.serverURL, merged, remote.version);
+          remote = await ServerAPI.pushState(serverURL, merged, remote.version);
         } catch (error) {
           if (error instanceof ServerAPI.ServerAPIError && error.code === "conflict" && error.envelope) {
             if (error.envelope.state) merged = merge(merged, error.envelope.state);
-            remote = await ServerAPI.pushState(state.serverURL, merged, error.envelope.version);
+            remote = await ServerAPI.pushState(serverURL, merged, error.envelope.version);
           } else {
             throw error;
           }
         }
-        applyState(remote.state ?? merged);
+        // apply 前再次用最新本地状态合并（含 push 在途的新操作），避免同步结果覆盖丢失。
+        // merge 的 tombstone 语义保证同步期间删除的条目也不会被复活。
+        applyState(merge(snapshotState(get()), remote.state ?? merged));
         set({ syncState: "synced" });
       } catch (error) {
         const message = error instanceof Error ? error.message : "同步失败，请检查网络。";
